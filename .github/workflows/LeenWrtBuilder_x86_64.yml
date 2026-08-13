@@ -150,8 +150,6 @@ jobs:
             $GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh $GITHUB_WORKSPACE --files-dir "$FILES_DIR_ABS"
           fi
           [[ -d "$FILES_DIR_ABS" ]] && { rm -rf files; cp -rf "$FILES_DIR_ABS" files; } || true
-          # 共享静态文件层（如 cpufreq-perf）：覆盖到核专属 files 之上
-          [[ -d "$GITHUB_WORKSPACE/files/common" ]] && { cp -rf "$GITHUB_WORKSPACE/files/common/." files/; } || true
 
           # 离线 .apk：拷入镜像首启安装目录（由 firstboot-pkgs 用 --allow-untrusted 安装）
           mkdir -p files/etc/firstboot-pkgs/apps
