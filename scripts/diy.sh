@@ -294,11 +294,6 @@ uci set firewall.@rule[-1].dest_port='443'
 uci set firewall.@rule[-1].target='REJECT'
 uci commit firewall
 
-uci -q get oaf.global.enable >/dev/null || uci set oaf.global=oaf
-uci set oaf.global.enable='1'
-uci set oaf.global.work_mode='gateway'
-uci commit oaf
-
 $OC_CONFIG_BLK
 EOT
         if [ "$NO_ADGH" != "1" ]; then

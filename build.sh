@@ -1,6 +1,6 @@
 #!/bin/bash
 # LeenWrt 本地编译脚本（Debian/Ubuntu）
-# 单核心由 cores/<core>.conf 驱动：leenwrt(fork 自 immortalwrt 上游, OAF/OC/ADGH 全功能, 可选 fwx 应用过滤)。
+# 单核心由 cores/<core>.conf 驱动：leenwrt(fork 自 immortalwrt 上游, OC/ADGH 全功能, 可选 fwx 应用过滤)。
 # 用法: chmod +x build.sh && ./build.sh
 
 set -e
@@ -79,15 +79,9 @@ GATEWAY_IP=""
 PPPOE_USER="" PPPOE_PASS=""
 [[ "$RUN_TYPE" == "main" || "$RUN_TYPE" == "full" ]] && { read -p "配置PPPoE? [y/N]: " pp; [[ "$pp" =~ ^[Yy]$ ]] && { read -p "用户名: " PPPOE_USER; read -p "密码: " PPPOE_PASS; success "PPPoE已配置"; } || success "使用DHCP"; }
 
-# OAF / OC / ADGH：leenwrt 全功能
-USE_OAF="false"; WITH_OC="false"; WITH_ADGH="false"
+# OC / ADGH：leenwrt 全功能（OAF 已由 fwx 应用过滤栈取代，不再单独安装）
+WITH_OC="false"; WITH_ADGH="false"
 if [ "$CORE" = "leenwrt" ]; then
-  if [[ "$RUN_TYPE" == "full" ]]; then
-    USE_OAF="true"
-    success "完整路由: OAF 始终安装"
-  elif [[ "$RUN_TYPE" == "main" ]]; then
-    read -p "安装OAF? [y/N]: " oaf; [[ "$oaf" =~ ^[Yy]$ ]] && USE_OAF="true" && success "将安装OAF"
-  fi
   [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC=true
   [[ "$RUN_TYPE" == "bypass" || ("$RUN_TYPE" == "full" && "$NO_ADGH" != "true") ]] && WITH_ADGH=true
 fi
@@ -115,7 +109,6 @@ echo -e "\n========================================  准备编译  =============
 echo "  核心: $CORE | 版本: $VERSION | 配置: $PROFILE | IP: $ROUTER_IP | 类型: $RUN_TYPE"
 [[ -n "$GATEWAY_IP" ]] && echo "  网关: $GATEWAY_IP"
 [[ -n "$PPPOE_USER" ]] && echo "  PPPoE: $PPPOE_USER"
-[[ "$USE_OAF" == "true" ]] && echo "  OAF: 是"
 [[ -n "$BYPASS_IP" ]] && echo "  旁路IP: $BYPASS_IP"
 echo "==================================================================================="
 read -p "确认开始? [Y/n]: " c; [[ "$c" =~ ^[Nn]$ ]] && exit 0
@@ -167,15 +160,6 @@ cd "$OPENWRT_DIR"
 "$DIY" -v "$MAIN_VER" -p before -t "$RUN_TYPE" --core "$CORE" --feeds "$FEEDS_FILE_ABS" ${WITH_FWX:+"--with-fwx"}
 ./scripts/feeds update -a
 
-# OAF 处理 (仅 leenwrt；主路由可选，完整路由必需) - feeds update 之后，feeds install 之前
-if [[ "$USE_OAF" == "true" ]]; then
-  rm -rf package/{luci-app-oaf,open-app-filter,oaf} feeds/packages/{net/open-app-filter,luci/luci-app-oaf,kernel/oaf}
-  rm -rf package/OpenAppFilter
-  timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
-  [[ -f "$SCRIPT_DIR/appfilter-assets/feature.cfg" ]] && cp -f "$SCRIPT_DIR/appfilter-assets/feature.cfg" package/OpenAppFilter/open-app-filter/files/
-  [[ -d "$SCRIPT_DIR/appfilter-assets/oaf-icons" ]] && cp -rf "$SCRIPT_DIR/appfilter-assets/oaf-icons" package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
-fi
-
 # OpenClash LuCI 替换（仅 leenwrt 旁路由 / 完整路由）
 if [[ "$WITH_OC" == "true" ]]; then
   chmod +x "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
@@ -209,7 +193,7 @@ fi
 if [[ "$WITH_FWX" = "true" ]]; then
   {
     echo ""
-    echo "# ===== fwx 应用过滤栈（可选，vendored feed: feeds/fwx）====="
+    echo "# ===== fwx 应用过滤栈（可选：kmod-fwx/fwxd/libfwx_common vendored in feeds/fwx + 15 个 luci-app-fwx-* 来自 src-git fanchmwrt-packages）====="
     echo "CONFIG_PACKAGE_kmod-fwx=y"
     echo "CONFIG_PACKAGE_fwxd=y"
     echo "CONFIG_PACKAGE_libfwx_common=y"
@@ -231,9 +215,8 @@ if [[ "$WITH_FWX" = "true" ]]; then
     echo "CONFIG_PACKAGE_luci-app-fwx-user=y"
     echo "CONFIG_PACKAGE_luci-app-fwx-user-record=y"
   } >> .config
-  echo "[build] 已追加 fwx 应用过滤栈 CONFIG（kmod-fwx/fwxd + 15 个 luci-app-fwx-*）"
+  echo "[build] 已追加 fwx 应用过滤栈 CONFIG（kmod-fwx/fwxd/libfwx_common vendored + 15 个 luci-app-fwx-* 来自 src-git fanchmwrt-packages）"
 fi
-[[ "$USE_OAF" == "true" ]] && echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config
 success "完成"
 
 # 5. 网络配置
