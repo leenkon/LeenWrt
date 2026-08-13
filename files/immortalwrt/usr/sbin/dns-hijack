@@ -1,0 +1,29 @@
+#!/bin/sh
+nft delete table inet dns_hijack 2>/dev/null
+if ! command -v nft >/dev/null 2>&1; then
+    logger -t dns-hijack "ERROR: nft not found"
+    exit 0
+fi
+
+nft add table inet dns_hijack
+nft add chain inet dns_hijack prerouting '{ type nat hook prerouting priority -100; }'
+
+# 检测旁路 IP（从 /etc/config/dhcp 的 list server 获取）
+# 仅匹配 LAN 网段，排除 127.0.0.1 / 公网 DNS
+BYPASS_IP=$(grep -m1 'list server' /etc/config/dhcp 2>/dev/null \
+    | sed "s/.*'\([^']*\)'.*/\1/; s/.*\"\([^\"]*\)\".*/\1/" \
+    | grep -E '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)' || true)
+
+if [ -n "$BYPASS_IP" ]; then
+    # 主路由模式：排除旁路由 IP（防止 AdGuardHome 上游被劫持回环）
+    nft add rule inet dns_hijack prerouting ip saddr != $BYPASS_IP udp dport 53 redirect to :53
+    nft add rule inet dns_hijack prerouting ip saddr != $BYPASS_IP tcp dport 53 redirect to :53
+    nft add rule inet dns_hijack prerouting ip6 daddr '::/0' udp dport 53 redirect to :53
+    nft add rule inet dns_hijack prerouting ip6 daddr '::/0' tcp dport 53 redirect to :53
+    logger -t dns-hijack "nftables DNS hijack applied (bypass: $BYPASS_IP)"
+else
+    # 完整路由模式：无旁路 IP，全部劫持到本地 ADGH(53)
+    nft add rule inet dns_hijack prerouting udp dport 53 redirect to :53
+    nft add rule inet dns_hijack prerouting tcp dport 53 redirect to :53
+    logger -t dns-hijack "nftables DNS hijack applied (full router, no bypass)"
+fi

@@ -1,0 +1,12 @@
+# FanchmWrt 首启在线安装 —— 通用增强包（官方源，仅 userspace；kmod 必须编译进镜像，见 build.sh）；luci 框架与 fwx 仪表盘已编入镜像
+luci-app-ddns
+ddns-scripts
+luci-app-upnp
+miniupnpd
+luci-app-wol
+wake-on-lan
+luci-app-udpxy
+udpxy
+luci-app-vlan
+openssl-util
+coreutils

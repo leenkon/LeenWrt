@@ -1,0 +1,15 @@
+# sniffer: redir-host 模式下从 TLS SNI / HTTP Host 嗅探域名，使域名规则生效
+sniffer:
+  enable: true
+  force-dns-mapping: true
+  parse-pure-ip: true
+  override-destination: true
+  sniff:
+    HTTP:
+      ports:
+        - 80
+        - 8080-8880
+    TLS:
+      ports:
+        - 443
+        - 8443

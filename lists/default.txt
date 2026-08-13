@@ -1,0 +1,2 @@
+# FanchmWrt 首启在线安装 —— 主路由 (default) 专属补充包
+irqbalance
