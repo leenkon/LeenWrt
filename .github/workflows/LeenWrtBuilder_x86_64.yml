@@ -4,7 +4,6 @@ env:
 on:
   workflow_dispatch:
     inputs:
-      core: {description: '核心(编译源): leenwrt', required: true, type: choice, options: [leenwrt]}
       version: {description: '版本 (leenwrt: 25.12.0/25.12.1)', required: true, type: string, default: '25.12.1'}
       profile: {description: '配置 (Main/Mini/Full/Full-noadgh)', required: true, type: choice, options: [Main, Mini, Full, Full-noadgh]}
       custom_ip: {description: '自定义IP', type: string, default: ''}
@@ -41,7 +40,7 @@ jobs:
       - name: 拉取源码
         run: |
           set -e
-          source $GITHUB_WORKSPACE/cores/${{ github.event.inputs.core }}.conf
+          source $GITHUB_WORKSPACE/cores/leenwrt.conf
           SRC_REF="${REF_PREFIX}${{ github.event.inputs.version }}"
           rm -rf openwrt
           # 直接按 SRC_REF（tag）克隆检出，避免浅克隆 fetch 后无本地 ref 致 checkout 失败
@@ -51,7 +50,7 @@ jobs:
         id: build
         run: |
           set -e
-          source $GITHUB_WORKSPACE/cores/${{ github.event.inputs.core }}.conf
+          source $GITHUB_WORKSPACE/cores/leenwrt.conf
           FEEDS_FILE_ABS="$GITHUB_WORKSPACE/$FEEDS_FILE"
           FILES_DIR_ABS="$GITHUB_WORKSPACE/$FILES_DIR"
           # 修复 Windows 提交可能带来的 CRLF（路由器 ash 不兼容），覆盖脚本/YAML/init.d
@@ -76,7 +75,7 @@ jobs:
           WITH_FWX=${{ github.event.inputs.with_fwx }}
 
           chmod +x $GITHUB_WORKSPACE/scripts/diy.sh
-          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p before -t $RUN_TYPE --core ${{ github.event.inputs.core }} --feeds "$FEEDS_FILE_ABS" ${WITH_FWX:+"--with-fwx"}
+          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p before -t $RUN_TYPE --core leenwrt --feeds "$FEEDS_FILE_ABS" ${WITH_FWX:+"--with-fwx"}
           ./scripts/feeds update -a
 
           if $WITH_OC; then
@@ -138,7 +137,7 @@ jobs:
           PUSER="${{ github.event.inputs.pppoe_username }}"; PPASS="${{ github.event.inputs.pppoe_password }}"
           NOADGH_ARG=""
           [ "$NO_ADGH" = "true" ] && NOADGH_ARG="--no-adgh"
-          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE --core ${{ github.event.inputs.core }} --files-dir "$FILES_DIR_ABS" \
+          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE --core leenwrt --files-dir "$FILES_DIR_ABS" \
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             ${NOADGH_ARG:+"$NOADGH_ARG"} \
@@ -174,8 +173,8 @@ jobs:
       - name: 上传固件
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.event.inputs.core }} ${{ github.event.inputs.version }} (${{ github.event.inputs.profile }})
-          tag_name: ${{ github.event.inputs.core }}-${{ github.event.inputs.version }}-${{ github.event.inputs.profile }}
+          name: leenwrt ${{ github.event.inputs.version }} (${{ github.event.inputs.profile }})
+          tag_name: leenwrt-${{ github.event.inputs.version }}-${{ github.event.inputs.profile }}
           files: openwrt/bin/targets/x86/64/*-${{ steps.build.outputs.timestamp }}.img.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
