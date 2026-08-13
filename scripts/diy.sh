@@ -23,7 +23,7 @@ SUBNET_MASK="255.255.255.0"
 DNS_MAIN="223.5.5.5"
 DNS_BACKUP="223.6.6.6"
 
-VERSION="" PHASE="" PROFILE_TYPE="" CORE="leenwrt" FEEDS_SRC="" FILES_DIR_NAME="files"
+VERSION="" PHASE="" PROFILE_TYPE="" FEEDS_SRC="" FILES_DIR_NAME="files"
 NO_ADGH=0 WITH_FWX=0
 CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
 
@@ -40,7 +40,6 @@ while [ $# -gt 0 ]; do
         --bypass-ip) BYPASS_IP="$2"; shift 2 ;;
         --no-adgh)   NO_ADGH=1; shift ;;
         --with-fwx)  WITH_FWX=1; shift ;;
-        --core)      CORE="$2"; shift 2 ;;
         --feeds)     FEEDS_SRC="$2"; shift 2 ;;
         --files-dir) FILES_DIR_NAME="$2"; shift 2 ;;
         *) error_exit "未知参数 $1" ;;
@@ -78,7 +77,7 @@ PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && pwd -P)
 
 case "$PHASE" in
 before)
-    echo "[diy] before: $VERSION (core=$CORE)"
+    echo "[diy] before: $VERSION"
     if [ -n "$FEEDS_SRC" ]; then
         FEED_CONF_SRC="$FEEDS_SRC"
     else

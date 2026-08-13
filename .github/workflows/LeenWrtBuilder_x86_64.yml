@@ -75,7 +75,7 @@ jobs:
           WITH_FWX=${{ github.event.inputs.with_fwx }}
 
           chmod +x $GITHUB_WORKSPACE/scripts/diy.sh
-          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p before -t $RUN_TYPE --core leenwrt --feeds "$FEEDS_FILE_ABS" ${WITH_FWX:+"--with-fwx"}
+          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p before -t $RUN_TYPE --feeds "$FEEDS_FILE_ABS" ${WITH_FWX:+"--with-fwx"}
           ./scripts/feeds update -a
 
           if $WITH_OC; then
@@ -137,7 +137,7 @@ jobs:
           PUSER="${{ github.event.inputs.pppoe_username }}"; PPASS="${{ github.event.inputs.pppoe_password }}"
           NOADGH_ARG=""
           [ "$NO_ADGH" = "true" ] && NOADGH_ARG="--no-adgh"
-          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE --core leenwrt --files-dir "$FILES_DIR_ABS" \
+          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE --files-dir "$FILES_DIR_ABS" \
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             ${NOADGH_ARG:+"$NOADGH_ARG"} \

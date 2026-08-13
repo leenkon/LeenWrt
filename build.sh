@@ -157,7 +157,7 @@ success "完成（取源引用: $SRC_REF）"
 # 4. 配置
 echo -e "\n${YELLOW}[4/7] 准备配置...${NC}"
 cd "$OPENWRT_DIR"
-"$DIY" -v "$MAIN_VER" -p before -t "$RUN_TYPE" --core "$CORE" --feeds "$FEEDS_FILE_ABS" ${WITH_FWX:+"--with-fwx"}
+"$DIY" -v "$MAIN_VER" -p before -t "$RUN_TYPE" --feeds "$FEEDS_FILE_ABS" ${WITH_FWX:+"--with-fwx"}
 ./scripts/feeds update -a
 
 # OpenClash LuCI 替换（仅 leenwrt 旁路由 / 完整路由）
@@ -224,7 +224,7 @@ echo -e "\n${YELLOW}[5/7] 生成网络配置...${NC}"
 # --no-adgh 仅在 NO_ADGH=true 时传入（leenwrt Full-noadgh）
 NOADGH_ARG=""
 [ "$NO_ADGH" = "true" ] && NOADGH_ARG="--no-adgh"
-"$DIY" -v "$MAIN_VER" -p after -t "$RUN_TYPE" --core "$CORE" --files-dir "$FILES_DIR_ABS" \
+"$DIY" -v "$MAIN_VER" -p after -t "$RUN_TYPE" --files-dir "$FILES_DIR_ABS" \
   ${ROUTER_IP:+--ip "$ROUTER_IP"} \
   ${GATEWAY_IP:+--gateway "$GATEWAY_IP"} \
   ${BYPASS_IP:+--bypass-ip "$BYPASS_IP"} \
