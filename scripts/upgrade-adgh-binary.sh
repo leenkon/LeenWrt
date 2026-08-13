@@ -2,14 +2,14 @@
 # 下载并注入官方预编译 AdGuardHome 静态二进制（linux/amd64）
 #
 # 取代 feeds 编译方案：免 Go 工具链、免 Makefile hash 打补丁、保证最新版、
-# 25.12 完全通用。二进制经 files/<core>/ 注入固件（如 files/leenwrt/usr/bin/AdGuardHome），
-# 由 files/leenwrt/etc/init.d/adguardhome 启动，配置复用 files/leenwrt/etc/adguardhome/adguardhome.yaml。
+# 25.12 完全通用。二进制经 files/ 注入固件（如 files/usr/bin/AdGuardHome），
+# 由 files/etc/init.d/adguardhome 启动，配置复用 files/etc/adguardhome/adguardhome.yaml。
 #
 set -e
 
 # 用法: upgrade-adgh-binary.sh [项目根目录] [--files-dir <核专属files目录>] [--version latest|<版本号>]
-#   --files-dir: 注入目标目录（如 files/leenwrt）；缺省回退到 <root>/files/leenwrt
-#   ADGH 仅 leenwrt 使用，其 FILES_DIR 即 files/leenwrt，须把二进制注入该目录才能进固件
+#   --files-dir: 注入目标目录（如 files）；缺省回退到 <root>/files
+#   ADGH 仅 leenwrt 使用，其 FILES_DIR 即 files，须把二进制注入该目录才能进固件
 PROJECT_ROOT="$(pwd -P)"
 FILES_DEST=""
 VERSION_ARG=""
@@ -21,7 +21,7 @@ while [ $# -gt 0 ]; do
     *) PROJECT_ROOT="$(cd "$1" && pwd -P)"; shift ;;
   esac
 done
-FILES_DEST="${FILES_DEST:-$PROJECT_ROOT/files/leenwrt}"
+FILES_DEST="${FILES_DEST:-$PROJECT_ROOT/files}"
 ADGH_VER="${VERSION_ARG:-${ADGH_VER:-latest}}"
 
 BIN_DIR="$FILES_DEST/usr/bin"

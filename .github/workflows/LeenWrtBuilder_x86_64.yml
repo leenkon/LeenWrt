@@ -103,11 +103,11 @@ jobs:
             echo "[build] Full-noadgh: 已禁用 luci-app-adguardhome（无引擎）"
           fi
 
-          # fwx 应用过滤（可选）：kmod-fwx/fwxd/libfwx_common vendored in feeds/fwx + 15 luci-app-fwx-* via src-git fwx-luci
+          # fwx 应用过滤（可选）：kmod-fwx/fwxd/libfwx_common vendored in feeds/fwx + 15 luci-app-fwx-* via src-git fwxluci
           if $WITH_FWX; then
             {
               echo ""
-              echo "# ===== fwx 应用过滤栈（kmod-fwx/fwxd/libfwx_common vendored in feeds/fwx + 15 luci-app-fwx-* via src-git fwx-luci）====="
+              echo "# ===== fwx 应用过滤栈（kmod-fwx/fwxd/libfwx_common vendored in feeds/fwx + 15 luci-app-fwx-* via src-git fwxluci）====="
               echo "CONFIG_PACKAGE_kmod-fwx=y"
               echo "CONFIG_PACKAGE_fwxd=y"
               echo "CONFIG_PACKAGE_libfwx_common=y"
@@ -129,7 +129,7 @@ jobs:
               echo "CONFIG_PACKAGE_luci-app-fwx-user=y"
               echo "CONFIG_PACKAGE_luci-app-fwx-user-record=y"
             } >> .config
-            echo "[build] 已追加 fwx 应用过滤栈 CONFIG（kmod-fwx/fwxd/libfwx_common vendored + 15 luci-app-fwx-* via src-git fwx-luci）"
+            echo "[build] 已追加 fwx 应用过滤栈 CONFIG（kmod-fwx/fwxd/libfwx_common vendored + 15 luci-app-fwx-* via src-git fwxluci）"
           fi
 
           ROOTPWD="${{ github.event.inputs.root_password }}"; ROOTPWD="${ROOTPWD:-password}"

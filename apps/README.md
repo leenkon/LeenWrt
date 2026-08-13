@@ -1,7 +1,7 @@
 # apps/ —— 离线安装包目录（自编译或本地上传皆可）
 
 本目录存放**离线**的 `.apk` 安装包——既可以是你本地编译的产物，也可以是从可信来源
-下载 / **手动上传**的预编译包——统一在首次启动时由 `files/leenwrt/etc/init.d/firstboot-pkgs`
+下载 / **手动上传**的预编译包——统一在首次启动时由 `files/etc/init.d/firstboot-pkgs`
 离线安装（`apk --allow-untrusted add`）。
 来源不限，关键是**与目标内核的 vermagic 匹配、且来源可信**。
 

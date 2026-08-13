@@ -19,17 +19,11 @@ ROOT_PASSWORD="password"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CORE_CONF_DIR="$SCRIPT_DIR/cores"
 
-# ========== 1. 核心选择 ==========
+# ========== 核心描述（单核 leenwrt） ==========
 echo "========================================"
 echo "    路由固件本地编译脚本"
 echo "========================================"
-echo -e "\n请选择核心（编译源）："
-echo "  1) leenwrt (默认, fork 自 immortalwrt 上游)"
-read -p "请输入选择 [1，默认 1]: " c
-c=${c:-1}
-case "$c" in 1) CORE="leenwrt";; *) error_exit "无效选择";; esac
-
-# source 核心描述文件
+CORE="leenwrt"
 CORE_CONF="$CORE_CONF_DIR/$CORE.conf"
 [ -f "$CORE_CONF" ] || error_exit "缺失核心描述: $CORE_CONF"
 # shellcheck disable=SC1090
@@ -79,21 +73,19 @@ GATEWAY_IP=""
 PPPOE_USER="" PPPOE_PASS=""
 [[ "$RUN_TYPE" == "main" || "$RUN_TYPE" == "full" ]] && { read -p "配置PPPoE? [y/N]: " pp; [[ "$pp" =~ ^[Yy]$ ]] && { read -p "用户名: " PPPOE_USER; read -p "密码: " PPPOE_PASS; success "PPPoE已配置"; } || success "使用DHCP"; }
 
-# OC / ADGH：leenwrt 全功能（OAF 已由 fwx 应用过滤栈取代，不再单独安装）
+# OC / ADGH：leenwrt 全功能（OAF 已由 fwx 应用过滤栈取代，不再单独安装；单核下恒为 leenwrt）
 WITH_OC="false"; WITH_ADGH="false"
-if [ "$CORE" = "leenwrt" ]; then
-  [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC=true
-  [[ "$RUN_TYPE" == "bypass" || ("$RUN_TYPE" == "full" && "$NO_ADGH" != "true") ]] && WITH_ADGH=true
-fi
+[[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC=true
+[[ "$RUN_TYPE" == "bypass" || ("$RUN_TYPE" == "full" && "$NO_ADGH" != "true") ]] && WITH_ADGH=true
 
 # fwx 应用过滤（可选，默认开启）：kmod-fwx/fwxd + 15 个 luci-app-fwx-* 编入镜像
 WITH_FWX="true"
 read -p "包含 fwx 应用过滤? [Y/n]: " fwx; [[ "$fwx" =~ ^[Nn]$ ]] && WITH_FWX="false"
 [ "$WITH_FWX" = "true" ] && success "将包含 fwx 应用过滤"
 
-# 旁路 IP (仅 leenwrt 主路由，用于 DNS 劫持排除规则和 DHCP DNS 选项)
+# 旁路 IP (主路由，用于 DNS 劫持排除规则和 DHCP DNS 选项)
 BYPASS_IP=""
-if [[ "$RUN_TYPE" == "main" && "$CORE" = "leenwrt" ]]; then
+if [[ "$RUN_TYPE" == "main" ]]; then
   read -p "旁路路由IP [默认: $DEF_BYPASS_IP，回车跳过]: " bip
   BYPASS_IP="${bip:-$DEF_BYPASS_IP}"
   success "旁路IP: $BYPASS_IP"
@@ -166,8 +158,8 @@ if [[ "$WITH_OC" == "true" ]]; then
   "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
 fi
 
-# AdGuardHome LuCI 壳去除对引擎包(adguardhome)的硬依赖（仅 leenwrt 25.12；引擎走二进制注入）
-if [[ "$CORE" = "leenwrt" && "$MAIN_VER" = "25.12" ]]; then
+# AdGuardHome LuCI 壳去除对引擎包(adguardhome)的硬依赖（leenwrt 25.12；引擎走二进制注入）
+if [[ "$MAIN_VER" = "25.12" ]]; then
   ADGH_LUCI_MK="$OPENWRT_DIR/feeds/luci/applications/luci-app-adguardhome/Makefile"
   if [ -f "$ADGH_LUCI_MK" ]; then
     sed -i -e 's/+adguardhome //g' -e '/LUCI_EXTRA_DEPENDS:=adguardhome/d' "$ADGH_LUCI_MK"
@@ -253,7 +245,6 @@ mkdir -p "$OPENWRT_DIR/files/etc/firstboot-pkgs/apps"
 cp -f "$SCRIPT_DIR/apps/"*.apk "$OPENWRT_DIR/files/etc/firstboot-pkgs/apps/" 2>/dev/null || true
 
 # 文件清理：按 profile 删除不需要的静态文件（在 openwrt 副本上操作，不修改源树）
-if [[ "$CORE" = "leenwrt" ]]; then
 case "$RUN_TYPE" in
   main)
     rm -rf "$OPENWRT_DIR/files/etc/adguardhome"
@@ -274,7 +265,6 @@ case "$RUN_TYPE" in
     fi
     ;;
 esac
-fi
 # 确保脚本可执行（Windows 无 Unix x 位，按路径/扩展名匹配）
 find "$OPENWRT_DIR/files" -type f \( -path "*/sbin/*" -o -path "*/init.d/*" -o -path "*/hotplug.d/*" -o -path "*/uci-defaults/*" -o -name "*.sh" \) -exec chmod 755 {} + 2>/dev/null || true
 make defconfig && make download && make clean
