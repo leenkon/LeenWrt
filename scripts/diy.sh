@@ -87,6 +87,9 @@ before)
     [ -f "$FEED_CONF_SRC" ] || error_exit "缺失feed配置: $FEED_CONF_SRC"
     rm -f feeds.conf
     cp "$FEED_CONF_SRC" feeds.conf
+    # vendored feed 在 conf 里写的是相对路径(./feeds/fwx)，但 feeds update 在 openwrt 源码根(TOPDIR)解析 src-link，
+    # 项目根的 feeds/ 不在其内会形成悬空软链；改写为绝对路径以正确定位本地 vendored 目录
+    sed -i "s#\./feeds/fwx#$PROJECT_ROOT/feeds/fwx#g" feeds.conf
     ;;
 
 after)

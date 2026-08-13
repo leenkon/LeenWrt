@@ -11,7 +11,6 @@ on:
       custom_gateway: {description: '网关(旁路由)', type: string, default: ''}
       pppoe_username: {description: 'PPPoE账号', type: string, default: ''}
       pppoe_password: {description: 'PPPoE密码', type: string, default: ''}
-      install_oaf: {description: '安装OAF(完整路由始终安装, 主路由可选)', type: boolean, default: false}
       with_fwx: {description: '包含 fwx 应用过滤(kmod-fwx/fwxd + 15 个 luci-app-fwx-*)', type: boolean, default: true}
       root_password: {description: 'root密码', type: string, default: ''}
 permissions:
@@ -69,9 +68,8 @@ jobs:
           NO_ADGH=${NO_ADGH:-false}
           MAIN_VER="${{ github.event.inputs.version }}"; MAIN_VER="${MAIN_VER%.*}"
 
-          # OAF/OC/ADGH（leenwrt 全功能）
-          INSTALL_OAF=false; WITH_OC=false; WITH_ADGH=false
-          [[ ("${{ github.event.inputs.install_oaf }}" == "true" && "$RUN_TYPE" == "main") || "$RUN_TYPE" == "full" ]] && INSTALL_OAF=true || INSTALL_OAF=false
+          # OC/ADGH（leenwrt 全功能；OAF 已由 fwx 应用过滤栈取代，不再单独安装）
+          WITH_OC=false; WITH_ADGH=false
           [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC=true || WITH_OC=false
           [[ "$RUN_TYPE" == "bypass" || ("$RUN_TYPE" == "full" && "$NO_ADGH" != "true") ]] && WITH_ADGH=true || WITH_ADGH=false
 
@@ -80,13 +78,6 @@ jobs:
           chmod +x $GITHUB_WORKSPACE/scripts/diy.sh
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p before -t $RUN_TYPE --core ${{ github.event.inputs.core }} --feeds "$FEEDS_FILE_ABS" ${WITH_FWX:+"--with-fwx"}
           ./scripts/feeds update -a
-
-          if $INSTALL_OAF; then
-            rm -rf package/{luci-app-oaf,open-app-filter,oaf} feeds/packages/{net/open-app-filter,luci/luci-app-oaf,kernel/oaf} package/OpenAppFilter
-            timeout 120 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
-            cp -f $GITHUB_WORKSPACE/appfilter-assets/feature.cfg package/OpenAppFilter/open-app-filter/files/
-            cp -rf $GITHUB_WORKSPACE/appfilter-assets/oaf-icons/ package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/
-          fi
 
           if $WITH_OC; then
             chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh
@@ -112,13 +103,12 @@ jobs:
             sed -i 's/^CONFIG_PACKAGE_luci-i18n-adguardhome-zh-cn=y/# &/' .config
             echo "[build] Full-noadgh: 已禁用 luci-app-adguardhome（无引擎）"
           fi
-          $INSTALL_OAF && echo -e "\nCONFIG_PACKAGE_luci-app-oaf=y" >> .config || true
 
-          # fwx 应用过滤（可选）：kmod-fwx/fwxd + 15 个 luci-app-fwx-* 编入镜像
+          # fwx 应用过滤（可选）：kmod-fwx/fwxd/libfwx_common vendored in feeds/fwx + 15 luci-app-fwx-* via src-git fwx-luci
           if $WITH_FWX; then
             {
               echo ""
-              echo "# ===== fwx 应用过滤栈（可选，vendored feed: feeds/fwx）====="
+              echo "# ===== fwx 应用过滤栈（kmod-fwx/fwxd/libfwx_common vendored in feeds/fwx + 15 luci-app-fwx-* via src-git fwx-luci）====="
               echo "CONFIG_PACKAGE_kmod-fwx=y"
               echo "CONFIG_PACKAGE_fwxd=y"
               echo "CONFIG_PACKAGE_libfwx_common=y"
@@ -140,7 +130,7 @@ jobs:
               echo "CONFIG_PACKAGE_luci-app-fwx-user=y"
               echo "CONFIG_PACKAGE_luci-app-fwx-user-record=y"
             } >> .config
-            echo "[build] 已追加 fwx 应用过滤栈 CONFIG（kmod-fwx/fwxd + 15 个 luci-app-fwx-*）"
+            echo "[build] 已追加 fwx 应用过滤栈 CONFIG（kmod-fwx/fwxd/libfwx_common vendored + 15 luci-app-fwx-* via src-git fwx-luci）"
           fi
 
           ROOTPWD="${{ github.event.inputs.root_password }}"; ROOTPWD="${ROOTPWD:-password}"
