@@ -1,5 +1,5 @@
 #!/bin/sh /etc/rc.common
-# immortalWrt 首启离线安装服务（仅离线 .apk，不触发在线 lists 安装）
+# LeenWrt 首启离线安装服务（仅离线 .apk，不做任何在线安装）
 # 安装 /etc/firstboot-pkgs/apps/*.apk（自编译或本地上传的预编译包，允许未签名；
 # 来源需与目标内核 vermagic 匹配，否则 kmod 无法加载），完成后自禁用并清理。
 # 仅离线安装，无需等待联网，首启立即执行。

@@ -1,11 +1,11 @@
 #!/bin/bash
 # OpenClash Meta 核心预装脚本
-# 下载最新 mihomo 核心二进制放入 files/<core>/etc/openclash/core/（如 files/immortalwrt），跳过首次启动时的在线下载
+# 下载最新 mihomo 核心二进制放入 files/<core>/etc/openclash/core/（如 files/leenwrt），跳过首次启动时的在线下载
 #
 # 用法: upgrade-openclash-core.sh [项目根目录] [--files-dir <核专属files目录>] [--arch linux-amd64]
-#   --files-dir: 注入目标目录（如 files/immortalwrt）；缺省回退到 <root>/files/immortalwrt
+#   --files-dir: 注入目标目录（如 files/leenwrt）；缺省回退到 <root>/files/leenwrt
 #   --arch:      默认 linux-amd64 (x86_64)
-#   仅 immortalwrt 旁路由/完整路由构建时调用；执行时机: diy.sh after 之后、files/ 复制到 openwrt 之前
+#   仅 leenwrt 旁路由/完整路由构建时调用；执行时机: diy.sh after 之后、files/ 复制到 openwrt 之前
 
 set -e
 
@@ -21,7 +21,7 @@ while [ $# -gt 0 ]; do
     *) PROJECT_ROOT="$(cd "$1" && pwd -P)"; shift ;;
   esac
 done
-FILES_DEST="${FILES_DEST:-$PROJECT_ROOT/files/immortalwrt}"
+FILES_DEST="${FILES_DEST:-$PROJECT_ROOT/files/leenwrt}"
 
 CORE_DIR="$FILES_DEST/etc/openclash/core"
 CORE_BIN="$CORE_DIR/clash_meta"

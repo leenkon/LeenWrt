@@ -17,7 +17,7 @@
   `/etc/firstboot-pkgs/apps/` 并在首启安装。
 - `*.apk` 已被 `.gitignore` 忽略，**不会提交进仓库**（避免大二进制入库）；
   这些包可以是本地编译产物，也可以是手动上传 / 下载的预编译包，只要来源可信即可。
-- 纯官方源就能取到的 userspace 包，请改用 `lists/` 在线装，不要放这里。
+- 纯官方源就能取到的 userspace 包，请随固件编译进镜像（在对应 `.config` 追加 `CONFIG_PACKAGE_*`）或离线 `.apk` 放入本目录，不要放这里。
 
 ## 注意
 - 原始二进制（如 OpenClash 的 clash_meta 核心、AdGuardHome 可执行文件）不是 `.apk`，
