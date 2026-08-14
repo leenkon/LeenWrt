@@ -1,0 +1,31 @@
+#!/bin/sh /etc/rc.common
+# LeenWrt 首启离线安装服务（仅离线 .apk，不做任何在线安装）
+# 安装 /etc/firstboot-pkgs/apps/*.apk（自编译或本地上传的预编译包，允许未签名；
+# 来源需与目标内核 vermagic 匹配，否则 kmod 无法加载），完成后自禁用并清理。
+# 仅离线安装，无需等待联网，首启立即执行。
+START=99
+STOP=10
+
+install_offline() {
+    if [ -d /etc/firstboot-pkgs/apps ]; then
+        for f in /etc/firstboot-pkgs/apps/*.apk; do
+            [ -f "$f" ] || continue
+            if apk --allow-untrusted add "$f" >/dev/null 2>&1; then
+                rm -f "$f"
+                logger -t firstboot-pkgs "离线安装完成: $f"
+            else
+                logger -t firstboot-pkgs "离线安装失败(保留待查): $f"
+            fi
+        done
+    fi
+    # 自清理：禁用并删除本服务，避免后续启动重复执行
+    /etc/init.d/firstboot-pkgs disable 2>/dev/null
+    rm -f /etc/init.d/firstboot-pkgs
+    rm -rf /etc/firstboot-pkgs
+}
+
+start() {
+    # 后台执行，避免阻塞系统启动；离线安装无需等待网络
+    ( install_offline ) &
+}
+stop() { :; }

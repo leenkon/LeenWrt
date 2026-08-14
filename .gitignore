@@ -1,0 +1,30 @@
+# 动态生成文件（diy.sh after 阶段生成，不提交）
+files/etc/uci-defaults/
+files/etc/shadow
+
+# 动态下载文件（构建时下载，不提交）
+files/etc/openclash/core/
+files/usr/bin/AdGuardHome
+
+# 离线 .apk 包（apps/ 中的不入库，避免大二进制；含自编译或本地上传的预编译包）
+apps/*.apk
+
+# 构建输出
+bin/
+build_dir/
+staging_dir/
+tmp/
+log/
+workflow_*.json
+
+# 编辑器
+.workbuddy/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# fwx 核心（构建期按钉死 SHA 从 upstream 动态拉取，不入库；.fwx_commit 为本地缓存标记）
+feeds/fwx/fwx/
+# fanchmwrt 系统主题（同策略动态拉取，不入库；.theme_commit 为本地缓存标记）
+feeds/fwx/luci-theme-fanchmwrt/
