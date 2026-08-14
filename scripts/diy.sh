@@ -89,6 +89,22 @@ before)
     # vendored feed 在 conf 里写的是相对路径(./feeds/fwx)，但 feeds update 在 openwrt 源码根(TOPDIR)解析 src-link，
     # 项目根的 feeds/ 不在其内会形成悬空软链；改写为绝对路径以正确定位本地 vendored 目录
     sed -i "s#\./feeds/fwx#$PROJECT_ROOT/feeds/fwx#g" feeds.conf
+
+    # fwx 应用过滤内核模块(kmod-fwx)硬依赖 fanchmwrt 的 fork 内核补丁 950-fwx-nf-conn-struct-user-hook:
+    # 它给 struct nf_conn 加了 fwx_data 成员, 而 vendored 的 fwx 源码无条件读写 ct->fwx_data;
+    # 该成员不在 immortalwrt 原版 6.12 内核中, 故在构建期把补丁注入 openwrt 内核 hack 目录(自动 apply)。
+    # 补丁自包含: 仅加结构体成员 + 无注册的 no-op 钩子, 不影响其它功能。仅 --with-fwx 时注入。
+    if [ "$WITH_FWX" = "1" ]; then
+        FWX_KERN_PATCH="$PROJECT_ROOT/patches/fwx/950-fwx-nf-conn-struct-user-hook.patch"
+        if [ -f "$FWX_KERN_PATCH" ]; then
+            FWX_HACK_DIR="target/linux/generic/hack-6.12"
+            mkdir -p "$FWX_HACK_DIR"
+            cp -f "$FWX_KERN_PATCH" "$FWX_HACK_DIR/"
+            echo "[diy] injected fwx kernel patch -> $FWX_HACK_DIR/$(basename "$FWX_KERN_PATCH")"
+        else
+            echo "[diy] WARN: 未找到 fwx 内核补丁 $FWX_KERN_PATCH (kmod-fwx 可能因缺 fwx_data 编译失败)" >&2
+        fi
+    fi
     ;;
 
 after)
