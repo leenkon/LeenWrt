@@ -229,6 +229,19 @@ uci commit firewall
 EOF
 )
 
+    # full/main 共用：启用 UPnP/IGD 并绑 lan->wan（miniupnpd 已编入镜像）
+    UPNP_BLK=$(cat <<'EOF'
+uci -q get upnpd.config >/dev/null || uci set upnpd.config=upnpd
+uci set upnpd.config.enabled='1'
+uci set upnpd.config.internal_iface='lan'
+uci set upnpd.config.external_iface='wan'
+uci set upnpd.config.secure='1'
+uci commit upnpd
+/etc/init.d/miniupnpd enable
+/etc/init.d/miniupnpd restart
+EOF
+)
+
     # full/main 共用：DHCP 公共段（范围、RA、下发单 DNS 等）
     DHCP_COMMON_BLK=$(cat <<EOF
 uci -q delete dhcp.lan.dhcp_option
@@ -237,6 +250,8 @@ uci set dhcp.lan.start='11'
 uci set dhcp.lan.limit='149'
 uci set dhcp.lan.dhcpv6='server'
 uci set dhcp.lan.ra='server'
+# 通告本机为 IPv6 默认网关（否则客户端有地址无路由）
+uci set dhcp.lan.ra_default='1'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
 EOF
@@ -353,6 +368,8 @@ EOT
         cat >> "$OUT" <<EOT
 $LAN_FORWARD_BLK
 
+$UPNP_BLK
+
 $OC_CONFIG_BLK
 EOT
         if [ "$NO_ADGH" != "1" ]; then
@@ -379,6 +396,8 @@ uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 
 $LAN_FORWARD_BLK
+
+$UPNP_BLK
 
 # 显式声明旁路 IP,供 dns-hijack 直接读取(取代 dhcp 反查,避免主路由模式 DNS 环路)
 uci -q delete dns_hijack.settings
