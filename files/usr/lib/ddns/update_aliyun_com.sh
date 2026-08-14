@@ -23,6 +23,9 @@ __URLBASE="https://alidns.aliyuncs.com/?"
 [ -z "$username" ] && write_log 14 "Service section not configured correctly! Missing key as 'username'"
 [ -z "$password" ] && write_log 14 "Service section not configured correctly! Missing secret as 'password'"
 
+# WAN 未拨通 / IPv6 未委派时 __IP 为空：跳过本轮更新，避免 procd 把 ddns 实例 crash-loop
+[ -z "$__IP" ] && { write_log 7 "No IP available yet, skip update"; return 1; }
+
 . /usr/share/libubox/jshn.sh
 
 local __RR __HOST __DOMAIN __TYPE

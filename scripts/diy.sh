@@ -25,7 +25,7 @@ DNS_BACKUP="223.6.6.6"
 
 VERSION="" PHASE="" PROFILE_TYPE="" FEEDS_SRC="" FILES_DIR_NAME="files"
 NO_ADGH=0 WITH_FWX=0
-CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" BYPASS_IP6="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
+CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" BYPASS_IP6="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD="" WAN_DEVICE=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -39,6 +39,7 @@ while [ $# -gt 0 ]; do
         --root-pass)  ROOT_PASSWORD="$2"; shift 2 ;;
         --bypass-ip) BYPASS_IP="$2"; shift 2 ;;
         --bypass-ip6) BYPASS_IP6="$2"; shift 2 ;;
+        --wan-device) WAN_DEVICE="$2"; shift 2 ;;
         --no-adgh)   NO_ADGH=1; shift ;;
         --with-fwx)  WITH_FWX=1; shift ;;
         --feeds)     FEEDS_SRC="$2"; shift 2 ;;
@@ -211,6 +212,9 @@ EOF
 )
 
     # 7) full/main 共用：WAN 段（PPPoE / DHCP）提前生成，避免两个分支重复
+    # WAN 物理口可经 --wan-device 指定（默认 eth0）。x86_64/虚拟机盒子端口映射随驱动探测顺序变化，
+    # 错配会导致 PPPoE PADI 从错误网卡发出而收不到 PADO，故开放为可配置项。
+    wan_dev=${WAN_DEVICE:-eth0}
     if [ "$PROFILE_TYPE" = "full" ] || [ "$PROFILE_TYPE" = "main" ]; then
         if [ -n "$PPPOE_USERNAME" ]; then
             u=$(_escape_uci "$PPPOE_USERNAME"); p=$(_escape_uci "$PPPOE_PASSWORD")
@@ -220,7 +224,7 @@ uci set network.wan.username='$u'
 uci set network.wan.password='$p'
             uci set network.wan.ipv6='auto'
             uci set network.wan.peerdns='1'
-            uci set network.wan.device='eth0'
+            uci set network.wan.device='$wan_dev'
             uci -q delete network.wan6
 EOT
 )
@@ -228,7 +232,7 @@ EOT
             WAN_BLK=$(cat <<EOT
             uci set network.wan.proto='dhcp'
             uci set network.wan.peerdns='1'
-            uci set network.wan.device='eth0'
+            uci set network.wan.device='$wan_dev'
             uci set network.wan6.proto='dhcpv6'
 uci set network.wan6.reqaddress='try'
 uci set network.wan6.reqprefix='auto'

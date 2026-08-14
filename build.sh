@@ -208,6 +208,7 @@ NOADGH_ARG=""
   ${ROUTER_IP:+--ip "$ROUTER_IP"} \
   ${GATEWAY_IP:+--gateway "$GATEWAY_IP"} \
   ${BYPASS_IP:+--bypass-ip "$BYPASS_IP"} \
+  ${WAN_DEVICE:+--wan-device "$WAN_DEVICE"} \
   ${PPPOE_USER:+--pppoe-user "$PPPOE_USER"} ${PPPOE_PASS:+--pppoe-pass "$PPPOE_PASS"} \
   ${NOADGH_ARG:+"$NOADGH_ARG"} \
   ${WITH_FWX:+"--with-fwx"} \
