@@ -199,23 +199,7 @@ fi
 # 3.6 fanchmwrt 系统主题动态拉取（默认主题 fanchmwrt，bootstrap 作基础）
 pull_fcm_package "$THEME_UPSTREAM_PATH" "$SCRIPT_DIR/feeds/fwx/luci-theme-fanchmwrt" "$SCRIPT_DIR/feeds/fwx/luci-theme-fanchmwrt/.theme_commit" "$THEME_COMMIT" "luci-theme-fanchmwrt"
 
-# 3.7 主题标题覆盖：恢复 LuCI 标准动态标题，替代 fanchmwrt 硬编码的 "FanchmWrt"
-# （主题目录为构建期动态拉取、gitignored，故在拉取后就地覆盖，重拉/CI 均生效）
-_THEME_HEADER="$SCRIPT_DIR/feeds/fwx/luci-theme-fanchmwrt/ucode/template/themes/fanchmwrt/header.ut"
-if [[ -f "$_THEME_HEADER" ]]; then
-  python3 - "$_THEME_HEADER" <<'PY'
-import sys
-p = sys.argv[1]
-s = open(p, encoding='utf-8').read()
-old = '<title>FanchmWrt</title>'
-new = "<title>{{ hostname }}{{ node?.title ? ` - ${striptags(node.title)}` : '' }} - LuCI</title>"
-if old in s:
-    open(p, 'w', encoding='utf-8').write(s.replace(old, new, 1))
-    print("[build] 主题标题已覆盖为 LuCI 动态标题")
-else:
-    print("[build] 主题标题行未匹配，跳过（可能 upstream 已改）")
-PY
-fi
+# 3.7（主题标题覆盖已移至 diy.sh before 阶段：fanchmwrt 主题标题 -> LuCI 动态标题）
 
 # 4. 配置
 echo -e "\n${YELLOW}[4/7] 准备配置...${NC}"

@@ -121,6 +121,24 @@ before)
             echo "[diy] WARN: 未找到 fwx kmod 补丁 $FWX_KMOD_PATCH (kmod-fwx 可能编译失败)" >&2
         fi
     fi
+
+    # fanchmwrt 系统主题标题覆盖：恢复 LuCI 标准动态标题，替代硬编码 "FanchmWrt"
+    # 主题目录为构建期动态拉取(gitignored)、build.sh 3.6 已在本次 before 前拉取；此处就地修改，重拉/CI 均生效
+    _THEME_HEADER="$PROJECT_ROOT/feeds/fwx/luci-theme-fanchmwrt/ucode/template/themes/fanchmwrt/header.ut"
+    if [ -f "$_THEME_HEADER" ]; then
+        python3 - "$_THEME_HEADER" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p, encoding='utf-8').read()
+old = '<title>FanchmWrt</title>'
+new = "<title>{{ hostname }}{{ node?.title ? ` - ${striptags(node.title)}` : '' }} - LuCI</title>"
+if old in s:
+    open(p, 'w', encoding='utf-8').write(s.replace(old, new, 1))
+    print("[diy] 主题标题已覆盖为 LuCI 动态标题")
+else:
+    print("[diy] 主题标题行未匹配，跳过（可能 upstream 已改）")
+PY
+    fi
     ;;
 
 after)
