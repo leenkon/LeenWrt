@@ -124,7 +124,7 @@ static af_url_ac_t g_url_ac = {
 static int g_url_ac_dirty = 1;
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(5,10,197)
-extern void nf_send_reset(struct net *net, struct sk_buff *oldskb, int hook);
+extern void nf_send_reset(struct net *net, struct sock *sk, struct sk_buff *oldskb, int hook);
 #elif LINUX_VERSION_CODE > KERNEL_VERSION(4,4,1)
 extern void nf_send_reset(struct net *net,  struct sk_buff *oldskb, int hook);
 #else
@@ -2051,7 +2051,7 @@ void send_reset_packet(struct sk_buff *skb, flow_info_t *flow){
 	if (g_tcp_rst && flow->l4_protocol == IPPROTO_TCP){
 		if (skb->protocol == htons(ETH_P_IP) && g_tcp_rst){
 			#if LINUX_VERSION_CODE > KERNEL_VERSION(5,10,197)
-				nf_send_reset(&init_net, skb, NF_INET_PRE_ROUTING);
+				nf_send_reset(&init_net, skb->sk, skb, NF_INET_PRE_ROUTING);
 			#elif LINUX_VERSION_CODE > KERNEL_VERSION(4,4,1)
 
 
@@ -2403,7 +2403,7 @@ u_int32_t fwx_hook_gateway_handle(struct sk_buff *skb, struct net_device *dev)
 					flow.app_id, MAC_ARRAY(client->mac));
 			if (skb->protocol == htons(ETH_P_IP) && g_tcp_rst){
 			#if LINUX_VERSION_CODE > KERNEL_VERSION(5,10,197)
-				nf_send_reset(&init_net, skb, NF_INET_PRE_ROUTING);
+				nf_send_reset(&init_net, skb->sk, skb, NF_INET_PRE_ROUTING);
 			#elif LINUX_VERSION_CODE > KERNEL_VERSION(4,4,1)
 
 
@@ -2423,7 +2423,7 @@ u_int32_t fwx_hook_gateway_handle(struct sk_buff *skb, struct net_device *dev)
 					MAC_ARRAY(client->mac));
 			if (skb->protocol == htons(ETH_P_IP) && g_tcp_rst){
 			#if LINUX_VERSION_CODE > KERNEL_VERSION(5,10,197)
-				nf_send_reset(&init_net, skb, NF_INET_PRE_ROUTING);
+				nf_send_reset(&init_net, skb->sk, skb, NF_INET_PRE_ROUTING);
 			#elif LINUX_VERSION_CODE > KERNEL_VERSION(4,4,1)
 
 

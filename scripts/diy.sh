@@ -104,6 +104,21 @@ before)
         else
             echo "[diy] WARN: 未找到 fwx 内核补丁 $FWX_KERN_PATCH (kmod-fwx 可能因缺 fwx_data 编译失败)" >&2
         fi
+
+        # kmod-fwx 6.12 兼容补丁：上游 fwx_main.c 在 >5.10.197 分支把 nf_send_reset 写成 4 参数，
+        # 而 6.12 内核实际为 3 参数(net, oldskb, hook)。该补丁把声明与 3 处调用统一改为 3 参数，
+        # 与 >4.4.1 分支已有的正确签名一致。kmod 经 src-link 直接引用项目根 feeds/fwx/fwx，故在此对其源码树打补丁。
+        FWX_KMOD_PATCH="$PROJECT_ROOT/patches/fwx/kmod-nf_send_reset-6.12.patch"
+        if [ -f "$FWX_KMOD_PATCH" ]; then
+            if patch -p1 --dry-run -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_KMOD_PATCH" >/dev/null 2>&1; then
+                patch -p1 --forward -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_KMOD_PATCH"
+                echo "[diy] applied fwx kmod 6.12 patch -> feeds/fwx/fwx/src/fwx_main.c"
+            else
+                echo "[diy] fwx kmod patch 已应用或上下文不符，跳过(详见 $FWX_KMOD_PATCH)"
+            fi
+        else
+            echo "[diy] WARN: 未找到 fwx kmod 补丁 $FWX_KMOD_PATCH (kmod-fwx 可能编译失败)" >&2
+        fi
     fi
     ;;
 

@@ -274,6 +274,10 @@ success "完成"
 echo -e "\n${YELLOW}[7/7] 编译固件...${NC}"
 make -j$(nproc) || make -j1 V=s
 
+# 构建结束：还原被 kmod-fwx 补丁临时修改的 fwx 源码树（diy.sh before 阶段 apply 的 6.12 兼容补丁），
+# 避免本地工作树被污染（CI 的 fresh checkout 不受影响；非 git 环境静默跳过）。
+git -C "$SCRIPT_DIR" checkout -- feeds/fwx/fwx 2>/dev/null || true
+
 echo -e "\n${GREEN}========================================  编译完成!  ========================================${NC}"
 echo "固件位置: $OPENWRT_DIR/bin/targets/x86/64/"
 ls -la "$OPENWRT_DIR/bin/targets/x86/64/"*combined*.img.gz 2>/dev/null || true
