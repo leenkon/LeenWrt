@@ -123,13 +123,31 @@ before)
 import sys, re
 p = sys.argv[1]
 s = open(p, encoding='utf-8').read()
-new = "<title>{{ hostname }}{{ node?.title ? ` - ${striptags(node.title)}` : '' }} - LuCI</title>"
+new = "<title>{{ striptags(`${boardinfo.hostname ?? '?'}${node ? ` - ${node.title}` : ''}`) }} - LuCI</title>"
 m = re.sub(r'<title>.*?</title>', new, s, count=1, flags=re.S)
 if m != s:
     open(p, 'w', encoding='utf-8').write(m)
     print("[diy] 主题标题已覆盖为 LuCI 动态标题")
 else:
     print("[diy] 未在 header.ut 找到 <title> 标签，跳过")
+PY
+    fi
+
+    # 删除 fanchmwrt 主题整个 <footer> 区域（保留 #modemenu 挂载点，否则 menu-fanchmwrt.js 的 renderModeMenu 找不到 #modemenu 直接 return，顶部菜单失效）
+    _THEME_FOOTER="$PROJECT_ROOT/feeds/fwx/luci-theme-fanchmwrt/ucode/template/themes/fanchmwrt/footer.ut"
+    if [ -f "$_THEME_FOOTER" ]; then
+        python3 - "$_THEME_FOOTER" <<'PY'
+import sys, re
+p = sys.argv[1]
+s0 = open(p, encoding='utf-8').read()
+s = re.sub(r'<span>.*?</span>\s*', '', s0, flags=re.S)
+s = re.sub(r'</?footer>', '', s)
+s = re.sub(r'\n[ \t]*\n[ \t]*\n', '\n\n', s)
+if s != s0:
+    open(p, 'w', encoding='utf-8').write(s)
+    print("[diy] 已删除主题 footer 区域（保留 #modemenu 与菜单脚本）")
+else:
+    print("[diy] footer.ut 未变化，跳过")
 PY
     fi
     ;;
