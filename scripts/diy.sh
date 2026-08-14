@@ -87,14 +87,10 @@ before)
     [ -f "$FEED_CONF_SRC" ] || error_exit "缺失feed配置: $FEED_CONF_SRC"
     rm -f feeds.conf
     cp "$FEED_CONF_SRC" feeds.conf
-    # vendored feed 在 conf 里写的是相对路径(./feeds/fwx)，但 feeds update 在 openwrt 源码根(TOPDIR)解析 src-link，
-    # 项目根的 feeds/ 不在其内会形成悬空软链；改写为绝对路径以正确定位本地 vendored 目录
+    # src-link 用项目根相对路径，但 feeds update 在 openwrt TOPDIR 解析，改写为绝对路径以定位 vendored 目录
     sed -i "s#\./feeds/fwx#$PROJECT_ROOT/feeds/fwx#g" feeds.conf
 
-    # fwx 应用过滤内核模块(kmod-fwx)硬依赖 fanchmwrt 的 fork 内核补丁 950-fwx-nf-conn-struct-user-hook:
-    # 它给 struct nf_conn 加了 fwx_data 成员, 而 feeds/fwx/fwx 中的 fwx 源码无条件读写 ct->fwx_data;
-    # 该成员不在 immortalwrt 原版 6.12 内核中, 故在构建期把补丁注入 openwrt 内核 hack 目录(自动 apply)。
-    # 补丁自包含: 仅加结构体成员 + 无注册的 no-op 钩子, 不影响其它功能。仅 --with-fwx 时注入。
+    # kmod-fwx 硬依赖 fanchmwrt fork 内核补丁(给 struct nf_conn 加 fwx_data，原版 6.12 内核无)，注入 6.12 hack 目录。仅 --with-fwx。
     if [ "$WITH_FWX" = "1" ]; then
         FWX_KERN_PATCH="$PROJECT_ROOT/patches/fwx/950-fwx-nf-conn-struct-user-hook.patch"
         if [ -f "$FWX_KERN_PATCH" ]; then
@@ -106,9 +102,7 @@ before)
             echo "[diy] WARN: 未找到 fwx 内核补丁 $FWX_KERN_PATCH (kmod-fwx 可能因缺 fwx_data 编译失败)" >&2
         fi
 
-        # kmod-fwx 6.12 兼容补丁：上游 fwx_main.c 在 >5.10.197 分支把 nf_send_reset 写成 4 参数，
-        # 而 6.12 内核实际为 3 参数(net, oldskb, hook)。该补丁把声明与 3 处调用统一改为 3 参数，
-        # 与 >4.4.1 分支已有的正确签名一致。kmod 经 src-link 直接引用项目根 feeds/fwx/fwx，故在此对其源码树打补丁。
+        # kmod-fwx 6.12 兼容：上游 fwx_main.c 把 nf_send_reset 写成 4 参数，6.12 实为 3 参数，此处对源码树打补丁。
         FWX_KMOD_PATCH="$PROJECT_ROOT/patches/fwx/kmod-nf_send_reset-6.12.patch"
         if [ -f "$FWX_KMOD_PATCH" ]; then
             if patch -p1 --dry-run -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_KMOD_PATCH" >/dev/null 2>&1; then
@@ -196,8 +190,7 @@ EOF
 LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 [ -n "$LAN_FW" ] && uci set ${LAN_FW}.forward='ACCEPT'
 WAN_FW=$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
-# PPPoE 链路 MTU 为 1492，缺 MSS 钳制会导致大包/TLS 握手被 PMTUD 黑洞丢弃（现象：已连接但请求错误/打不开网页）。
-# 显式钳制，避免依赖 stock firewall 的 wan 区默认值。
+# PPPoE MTU 1492，缺 MSS 钳制会导致大包被 PMTUD 黑洞丢弃(已连接但打不开网页)，显式钳制。
 [ -n "$WAN_FW" ] && uci set ${WAN_FW}.mtu_fix='1'
 while uci -q delete firewall.@forwarding[0]; do :; done
 uci add firewall forwarding
@@ -222,7 +215,7 @@ EOF
     DHCP_COMMON_BLK=$(cat <<EOF
 uci -q delete dhcp.lan.dhcp_option
 uci add_list dhcp.lan.dhcp_option='6,$ip_esc'
-uci set dhcp.lan.start='7'
+uci set dhcp.lan.start='11'
 uci set dhcp.lan.limit='149'
 uci set dhcp.lan.dhcpv6='server'
 uci set dhcp.lan.ra='server'
@@ -231,8 +224,7 @@ uci set dhcp.@dnsmasq[0].sequential_ip='1'
 EOF
 )
 
-    # full/main 共用：WAN 段（PPPoE / DHCP）提前生成，避免两个分支重复
-    # WAN 设备不写死：由 immortalWrt x86 的 board.d 首启自动探测（LAN=eth0/br-lan，eth1 存在则 WAN=eth1），与官方一致
+    # WAN 段(PPPoE/DHCP)提前生成避免重复；WAN 设备不写死，由 board.d 首启探测(eth1 存在则作 WAN)。
     if [ "$PROFILE_TYPE" = "full" ] || [ "$PROFILE_TYPE" = "main" ]; then
         if [ -n "$PPPOE_USERNAME" ]; then
             u=$(_escape_uci "$PPPOE_USERNAME"); p=$(_escape_uci "$PPPOE_PASSWORD")
@@ -281,9 +273,7 @@ uci set dhcp.lan6.ignore='1'
 uci -q set dhcp.@dnsmasq[0].port='5453'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
-# 旁路由 dnsmasq 仅作 AdGuardHome 兜底(127.0.0.1:5453)：adguardhome.yaml upstream_dns 第二条指向本机 dnsmasq，
-# 故必须给 dnsmasq 配上游，否则 OC 崩溃时兜底解析失败(注释声称走阿里云、实际此前未配 → 死兜底)。
-# noresolv=1 不读 resolv.conf(旁路由无 wan、resolv.conf 为空)，仅用下列阿里云兜底。
+# 旁路由 dnsmasq 仅作 ADGH 兜底(:5453)，须配上游；noresolv=1 不读空 resolv.conf。
 uci -q delete dhcp.@dnsmasq[0].server
 uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
@@ -319,8 +309,7 @@ $IP_FORWARD_LN
 $DHCP_COMMON_BLK
 EOT
         if [ "$NO_ADGH" = "1" ]; then
-            # noadgh：dnsmasq 占 :53，上游指向 OpenClash redir-host DNS(:7874) + 纯阿里云兜底；
-            # OC 停止时 dnsmasq 直连阿里云兜底，避免 DNS 全断（兼容 OC 停止场景）
+            # noadgh：dnsmasq 占 :53，上游指向 OC redir-host(:7874)+阿里云兜底，OC 停时仍解析。
             cat >> "$OUT" <<EOT
 uci -q delete dhcp.@dnsmasq[0].port
 uci -q delete dhcp.@dnsmasq[0].server
@@ -332,8 +321,7 @@ uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 EOT
         else
-            # 带 ADGH：dnsmasq 让出 :53（port 5453，仅 DHCP），AdGuardHome 占 :53
-            # 纯阿里云 DNS 兜底（明文 223.5.5.5/223.6.6.6），noresolv=1 不读 ISP resolv.conf
+            # 带 ADGH：dnsmasq 让出 :53(port 5453)，AdGuardHome 占 :53，纯阿里云兜底。
             cat >> "$OUT" <<EOT
 uci -q set dhcp.@dnsmasq[0].port='5453'
 uci -q delete dhcp.@dnsmasq[0].server
