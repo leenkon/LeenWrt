@@ -6,13 +6,13 @@ if ! command -v nft >/dev/null 2>&1; then
 fi
 
 nft add table inet dns_hijack
-nft add chain inet dns_hijack prerouting '{ type nat hook prerouting priority -100; }'
+# 早于 firewall4 的 dstnat(-100) 执行,确保 DNS 劫持优先于其它 NAT 规则
+nft add chain inet dns_hijack prerouting '{ type nat hook prerouting priority -150; }'
 
-# 检测旁路 IP（从 /etc/config/dhcp 的 list server 获取）
-# 仅匹配 LAN 网段，排除 127.0.0.1 / 公网 DNS
-BYPASS_IP=$(grep -m1 'list server' /etc/config/dhcp 2>/dev/null \
-    | sed "s/.*'\([^']*\)'.*/\1/; s/.*\"\([^\"]*\)\".*/\1/" \
-    | grep -E '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)' || true)
+# 旁路 IP 由 99-custom.sh 显式写入 /etc/config/dns_hijack(settings.bypass_ip)。
+# 未配置即视为无旁路(全劫持);不再运行时反查 /etc/config/dhcp,避免主路由模式下
+# 探测失败(如 server 列表格式变化)把旁路由自身查询也劫持回环、形成 DNS 环路。
+BYPASS_IP=$(uci -q get dns_hijack.settings.bypass_ip 2>/dev/null)
 
 if [ -n "$BYPASS_IP" ]; then
     # 主路由模式：排除旁路由 IP（防止 AdGuardHome 上游被劫持回环）

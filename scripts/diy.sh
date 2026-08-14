@@ -287,14 +287,6 @@ EOT
         fi
         cat >> "$OUT" <<EOT
 $LAN_FORWARD_BLK
-uci add firewall rule
-uci set firewall.@rule[-1].name='Block-QUIC'
-uci set firewall.@rule[-1].src='lan'
-uci set firewall.@rule[-1].dest='wan'
-uci set firewall.@rule[-1].proto='udp'
-uci set firewall.@rule[-1].dest_port='443'
-uci set firewall.@rule[-1].target='REJECT'
-uci commit firewall
 
 $OC_CONFIG_BLK
 EOT
@@ -323,6 +315,11 @@ uci commit dhcp
 
 $LAN_FORWARD_BLK
 
+# 显式声明旁路 IP,供 dns-hijack 直接读取(取代 dhcp 反查,避免主路由模式 DNS 环路)
+uci -q delete dns_hijack.settings
+uci set dns_hijack.settings=settings
+uci set dns_hijack.settings.bypass_ip='$BYPASS_IP'
+uci commit dns_hijack
 $DNS_HIJACK_BLK
 EOT
     fi
