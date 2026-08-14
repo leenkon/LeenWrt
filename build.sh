@@ -73,7 +73,7 @@ GATEWAY_IP=""
 PPPOE_USER="" PPPOE_PASS=""
 [[ "$RUN_TYPE" == "main" || "$RUN_TYPE" == "full" ]] && { read -p "配置PPPoE? [y/N]: " pp; [[ "$pp" =~ ^[Yy]$ ]] && { read -p "用户名: " PPPOE_USER; read -p "密码: " PPPOE_PASS; success "PPPoE已配置"; } || success "使用DHCP"; }
 
-# OC / ADGH：leenwrt 全功能（OAF 已由 fwx 应用过滤栈取代，不再单独安装；单核下恒为 leenwrt）
+# OC / ADGH：leenwrt 全功能（单核下恒为 leenwrt）
 WITH_OC="false"; WITH_ADGH="false"
 [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC=true
 [[ "$RUN_TYPE" == "bypass" || ("$RUN_TYPE" == "full" && "$NO_ADGH" != "true") ]] && WITH_ADGH=true
@@ -183,31 +183,19 @@ fi
 
 # fwx 应用过滤（可选）：kmod-fwx/fwxd + 15 个 luci-app-fwx-* 编入镜像
 if [[ "$WITH_FWX" = "true" ]]; then
-  {
-    echo ""
-    echo "# ===== fwx 应用过滤栈（可选：kmod-fwx/fwxd/libfwx_common vendored in feeds/fwx + 15 个 luci-app-fwx-* 来自 src-git fanchmwrt-packages）====="
-    echo "CONFIG_PACKAGE_kmod-fwx=y"
-    echo "CONFIG_PACKAGE_fwxd=y"
-    echo "CONFIG_PACKAGE_libfwx_common=y"
-    echo "CONFIG_PACKAGE_libmosquitto=y"
-    echo "CONFIG_PACKAGE_libsqlite3=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-app-center=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-appfilter=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-dashboard=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-dashboard-setting=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-feature=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-mac-blacklist=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-macfilter=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-network=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-record=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-record-whitelist=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-resources=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-session-stat=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-system=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-user=y"
-    echo "CONFIG_PACKAGE_luci-app-fwx-user-record=y"
-  } >> .config
-  echo "[build] 已追加 fwx 应用过滤栈 CONFIG（kmod-fwx/fwxd/libfwx_common vendored + 15 个 luci-app-fwx-* 来自 src-git fanchmwrt-packages）"
+  FWX_LIST="$SCRIPT_DIR/feeds/fwx/fwx-packages.list"
+  if [[ -f "$FWX_LIST" ]]; then
+    {
+      echo ""
+      echo "# ===== fwx 应用过滤栈（可选：kmod-fwx/fwxd/libfwx_common vendored + 15 个 luci-app-fwx-* 来自 src-git fanchmwrt-packages）====="
+      while read -r pkg; do
+        [[ -n "$pkg" && "$pkg" != \#* ]] && echo "CONFIG_PACKAGE_${pkg}=y"
+      done < "$FWX_LIST"
+    } >> .config
+    echo "[build] 已追加 fwx 应用过滤栈 CONFIG（来自 $FWX_LIST）"
+  else
+    echo "[build] 警告: 未找到 fwx 包清单 $FWX_LIST，跳过 fwx CONFIG 注入"
+  fi
 fi
 success "完成"
 
@@ -274,9 +262,19 @@ success "完成"
 echo -e "\n${YELLOW}[7/7] 编译固件...${NC}"
 make -j$(nproc) || make -j1 V=s
 
-# 构建结束：还原被 kmod-fwx 补丁临时修改的 fwx 源码树（diy.sh before 阶段 apply 的 6.12 兼容补丁），
-# 避免本地工作树被污染（CI 的 fresh checkout 不受影响；非 git 环境静默跳过）。
-git -C "$SCRIPT_DIR" checkout -- feeds/fwx/fwx 2>/dev/null || true
+# 构建结束：仅回退 diy.sh(before 阶段)自动打入的 fwx kmod 6.12 兼容补丁,
+# 不触碰用户对 feeds/fwx/fwx 源码树的其它未提交改动(取代原先 git checkout -- 会误删本地编辑)。
+FWX_KMOD_PATCH="$SCRIPT_DIR/patches/fwx/kmod-nf_send_reset-6.12.patch"
+if [ -f "$FWX_KMOD_PATCH" ]; then
+    if patch -p1 -R --dry-run -d "$SCRIPT_DIR/feeds/fwx/fwx" < "$FWX_KMOD_PATCH" >/dev/null 2>&1; then
+        patch -p1 -R -d "$SCRIPT_DIR/feeds/fwx/fwx" < "$FWX_KMOD_PATCH"
+        echo "[build] 已回退 fwx kmod 6.12 兼容补丁(仅补丁本身,不影响其他本地改动)"
+    else
+        echo "[build] fwx kmod 补丁未应用或已回退,跳过清理"
+    fi
+else
+    echo "[build] 警告: 未找到 fwx kmod 补丁 $FWX_KMOD_PATCH,跳过回退"
+fi
 
 echo -e "\n${GREEN}========================================  编译完成!  ========================================${NC}"
 echo "固件位置: $OPENWRT_DIR/bin/targets/x86/64/"

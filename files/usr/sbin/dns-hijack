@@ -9,21 +9,32 @@ nft add table inet dns_hijack
 # 早于 firewall4 的 dstnat(-100) 执行,确保 DNS 劫持优先于其它 NAT 规则
 nft add chain inet dns_hijack prerouting '{ type nat hook prerouting priority -150; }'
 
-# 旁路 IP 由 99-custom.sh 显式写入 /etc/config/dns_hijack(settings.bypass_ip)。
+# 旁路 IP 由 99-custom.sh 显式写入 /etc/config/dns_hijack(settings.bypass_ip / bypass_ip6)。
 # 未配置即视为无旁路(全劫持);不再运行时反查 /etc/config/dhcp,避免主路由模式下
 # 探测失败(如 server 列表格式变化)把旁路由自身查询也劫持回环、形成 DNS 环路。
+# IPv4/IPv6 各自按配置的旁路地址排除;未配置旁路地址的协议族全部劫持到本地 ADGH(:53)。
 BYPASS_IP=$(uci -q get dns_hijack.settings.bypass_ip 2>/dev/null)
+BYPASS_IP6=$(uci -q get dns_hijack.settings.bypass_ip6 2>/dev/null)
 
 if [ -n "$BYPASS_IP" ]; then
-    # 主路由模式：排除旁路由 IP（防止 AdGuardHome 上游被劫持回环）
+    # 主路由模式：排除旁路由 IPv4(防止 AdGuardHome 上游被劫持回环)
     nft add rule inet dns_hijack prerouting ip saddr != $BYPASS_IP udp dport 53 redirect to :53
     nft add rule inet dns_hijack prerouting ip saddr != $BYPASS_IP tcp dport 53 redirect to :53
-    nft add rule inet dns_hijack prerouting ip6 daddr '::/0' udp dport 53 redirect to :53
-    nft add rule inet dns_hijack prerouting ip6 daddr '::/0' tcp dport 53 redirect to :53
-    logger -t dns-hijack "nftables DNS hijack applied (bypass: $BYPASS_IP)"
+    if [ -n "$BYPASS_IP6" ]; then
+        # 配置了 IPv6 旁路地址时,同等排除
+        nft add rule inet dns_hijack prerouting ip6 saddr != $BYPASS_IP6 udp dport 53 redirect to :53
+        nft add rule inet dns_hijack prerouting ip6 saddr != $BYPASS_IP6 tcp dport 53 redirect to :53
+    else
+        # 未配置 IPv6 旁路地址,全量劫持 IPv6 DNS 到 ADGH(:53)
+        nft add rule inet dns_hijack prerouting ip6 udp dport 53 redirect to :53
+        nft add rule inet dns_hijack prerouting ip6 tcp dport 53 redirect to :53
+    fi
+    logger -t dns-hijack "nftables DNS hijack applied (bypass: ${BYPASS_IP}${BYPASS_IP6:+ / $BYPASS_IP6})"
 else
     # 完整路由模式：无旁路 IP，全部劫持到本地 ADGH(53)
     nft add rule inet dns_hijack prerouting udp dport 53 redirect to :53
     nft add rule inet dns_hijack prerouting tcp dport 53 redirect to :53
+    nft add rule inet dns_hijack prerouting ip6 udp dport 53 redirect to :53
+    nft add rule inet dns_hijack prerouting ip6 tcp dport 53 redirect to :53
     logger -t dns-hijack "nftables DNS hijack applied (full router, no bypass)"
 fi

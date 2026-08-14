@@ -25,7 +25,7 @@ DNS_BACKUP="223.6.6.6"
 
 VERSION="" PHASE="" PROFILE_TYPE="" FEEDS_SRC="" FILES_DIR_NAME="files"
 NO_ADGH=0 WITH_FWX=0
-CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
+CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" BYPASS_IP6="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -38,6 +38,7 @@ while [ $# -gt 0 ]; do
         --pppoe-pass) PPPOE_PASSWORD="$2"; shift 2 ;;
         --root-pass)  ROOT_PASSWORD="$2"; shift 2 ;;
         --bypass-ip) BYPASS_IP="$2"; shift 2 ;;
+        --bypass-ip6) BYPASS_IP6="$2"; shift 2 ;;
         --no-adgh)   NO_ADGH=1; shift ;;
         --with-fwx)  WITH_FWX=1; shift ;;
         --feeds)     FEEDS_SRC="$2"; shift 2 ;;
@@ -350,6 +351,7 @@ $LAN_FORWARD_BLK
 uci -q delete dns_hijack.settings
 uci set dns_hijack.settings=settings
 uci set dns_hijack.settings.bypass_ip='$BYPASS_IP'
+[ -n '$BYPASS_IP6' ] && uci set dns_hijack.settings.bypass_ip6='$BYPASS_IP6'
 uci commit dns_hijack
 $DNS_HIJACK_BLK
 EOT

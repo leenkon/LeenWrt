@@ -67,7 +67,7 @@ jobs:
           NO_ADGH=${NO_ADGH:-false}
           MAIN_VER="${{ github.event.inputs.version }}"; MAIN_VER="${MAIN_VER%.*}"
 
-          # OC/ADGH（leenwrt 全功能；OAF 已由 fwx 应用过滤栈取代，不再单独安装）
+          # OC/ADGH（leenwrt 全功能）
           WITH_OC=false; WITH_ADGH=false
           [[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC=true || WITH_OC=false
           [[ "$RUN_TYPE" == "bypass" || ("$RUN_TYPE" == "full" && "$NO_ADGH" != "true") ]] && WITH_ADGH=true || WITH_ADGH=false
@@ -105,31 +105,19 @@ jobs:
 
           # fwx 应用过滤（可选）：kmod-fwx/fwxd/libfwx_common vendored in feeds/fwx + 15 luci-app-fwx-* via src-git fwxluci
           if $WITH_FWX; then
-            {
-              echo ""
-              echo "# ===== fwx 应用过滤栈（kmod-fwx/fwxd/libfwx_common vendored in feeds/fwx + 15 luci-app-fwx-* via src-git fwxluci）====="
-              echo "CONFIG_PACKAGE_kmod-fwx=y"
-              echo "CONFIG_PACKAGE_fwxd=y"
-              echo "CONFIG_PACKAGE_libfwx_common=y"
-              echo "CONFIG_PACKAGE_libmosquitto=y"
-              echo "CONFIG_PACKAGE_libsqlite3=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-app-center=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-appfilter=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-dashboard=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-dashboard-setting=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-feature=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-mac-blacklist=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-macfilter=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-network=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-record=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-record-whitelist=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-resources=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-session-stat=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-system=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-user=y"
-              echo "CONFIG_PACKAGE_luci-app-fwx-user-record=y"
-            } >> .config
-            echo "[build] 已追加 fwx 应用过滤栈 CONFIG（kmod-fwx/fwxd/libfwx_common vendored + 15 luci-app-fwx-* via src-git fwxluci）"
+            FWX_LIST="$GITHUB_WORKSPACE/feeds/fwx/fwx-packages.list"
+            if [ -f "$FWX_LIST" ]; then
+              {
+                echo ""
+                echo "# ===== fwx 应用过滤栈（kmod-fwx/fwxd/libfwx_common vendored + 15 luci-app-fwx-* via src-git fwxluci）====="
+                while read -r pkg; do
+                  [ -n "$pkg" ] && [ "${pkg#\#}" = "$pkg" ] && echo "CONFIG_PACKAGE_${pkg}=y"
+                done < "$FWX_LIST"
+              } >> .config
+              echo "[build] 已追加 fwx 应用过滤栈 CONFIG（来自 $FWX_LIST）"
+            else
+              echo "[build] 警告: 未找到 fwx 包清单 $FWX_LIST，跳过 fwx CONFIG 注入"
+            fi
           fi
 
           ROOTPWD="${{ github.event.inputs.root_password }}"; ROOTPWD="${ROOTPWD:-password}"

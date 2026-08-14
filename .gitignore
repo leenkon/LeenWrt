@@ -1,7 +1,6 @@
 # 动态生成文件（diy.sh after 阶段生成，不提交）
 files/etc/uci-defaults/
 files/etc/shadow
-files/etc/firstboot-pkgs/profile
 
 # 动态下载文件（构建时下载，不提交）
 files/etc/openclash/core/
