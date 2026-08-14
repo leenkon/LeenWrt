@@ -15,7 +15,7 @@
 ## 放置规则
 - 直接把 `.apk` 丢进本目录即可，构建脚本会自动拷到镜像的
   `/etc/firstboot-pkgs/apps/` 并在首启安装。
-- `*.apk` 已被 `.gitignore` 忽略，**不会提交进仓库**（避免大二进制入库）；
+- `*.apk` **纳入版本库**（不再被 `.gitignore` 忽略），随固件打包进 `/etc/firstboot-pkgs/apps/` 首启安装；kmod 类须与自编译内核 vermagic 一致。
   这些包可以是本地编译产物，也可以是手动上传 / 下载的预编译包，只要来源可信即可。
 - 纯官方源就能取到的 userspace 包，请随固件编译进镜像（在对应 `.config` 追加 `CONFIG_PACKAGE_*`）或离线 `.apk` 放入本目录，不要放这里。
 

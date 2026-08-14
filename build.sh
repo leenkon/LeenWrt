@@ -291,7 +291,18 @@ fi
 
 # 离线 .apk：拷入镜像首启安装目录 /etc/firstboot-pkgs/apps/（由 firstboot-pkgs 用 --allow-untrusted 安装）
 mkdir -p "$OPENWRT_DIR/files/etc/firstboot-pkgs/apps"
-cp -f "$SCRIPT_DIR/apps/"*.apk "$OPENWRT_DIR/files/etc/firstboot-pkgs/apps/" 2>/dev/null || true
+shopt -s nullglob
+_copied=0
+for _apk in "$SCRIPT_DIR/apps/"*.apk; do
+  cp -f "$_apk" "$OPENWRT_DIR/files/etc/firstboot-pkgs/apps/"
+  _copied=$((_copied + 1))
+done
+shopt -u nullglob
+if [ "$_copied" -gt 0 ]; then
+  success "已拷贝 $_copied 个离线 .apk 到镜像首启安装目录"
+else
+  echo "[build] 警告: apps/ 下无 .apk，自定义离线包将不会随固件安装"
+fi
 
 # 文件清理：按 profile 删除不需要的静态文件（在 openwrt 副本上操作，不修改源树）
 case "$RUN_TYPE" in

@@ -6,8 +6,8 @@ files/etc/shadow
 files/etc/openclash/core/
 files/usr/bin/AdGuardHome
 
-# 离线 .apk 包（apps/ 中的不入库，避免大二进制；含自编译或本地上传的预编译包）
-apps/*.apk
+# 离线 .apk 包：需随固件打包（首启经 firstboot-pkgs 用 --allow-untrusted 安装），
+# 故纳入版本库、不忽略；kmod 类须与自编译内核 vermagic 一致。
 
 # 构建输出
 bin/
