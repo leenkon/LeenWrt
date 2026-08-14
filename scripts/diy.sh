@@ -366,7 +366,7 @@ uci set firewall.@defaults[0].flow_offloading='$FLOFF'
 uci set firewall.@defaults[0].flow_offloading_hw='$FLOFF_HW'
 uci commit firewall
 
-uci set system.@system[0].hostname='LeenWrt-${PROFILE_TYPE}'
+uci set system.@system[0].hostname='LeenWrt'
 uci set system.@system[0].timezone='CST-8'
 uci set system.@system[0].zonename='Asia/Shanghai'
 uci -q delete system.ntp.server
