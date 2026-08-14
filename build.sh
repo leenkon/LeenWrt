@@ -249,6 +249,17 @@ if [[ "$WITH_FWX" = "true" ]]; then
     echo "[build] 警告: 未找到 fwx 包清单 $FWX_LIST，跳过 fwx CONFIG 注入"
   fi
 fi
+
+# fwx / fwxluci 为本地编译进镜像的 feed，不应作为设备端远程 apk 仓库：
+# 官方镜像不存在对应 packages.adb，若设为 y，apk update 会去镜像拉取报 404（wget error 8 / unexpected end of file）。
+# 设为 m：distfeeds.conf 中以注释形式保留（OpenWrt 官方“本地 feed”做法），避免无效远程源。
+for _f in fwx fwxluci; do
+  if ! grep -q "^CONFIG_FEED_${_f}=" .config; then
+    printf 'CONFIG_FEED_%s=m\n' "$_f" >> .config
+  else
+    sed -i "s/^CONFIG_FEED_${_f}=y/CONFIG_FEED_${_f}=m/" .config
+  fi
+done
 success "完成"
 
 # 5. 网络配置
