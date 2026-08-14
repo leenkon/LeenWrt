@@ -262,6 +262,13 @@ uci set dhcp.lan6.ignore='1'
 uci -q set dhcp.@dnsmasq[0].port='5453'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
+# 旁路由 dnsmasq 仅作 AdGuardHome 兜底(127.0.0.1:5453)：adguardhome.yaml upstream_dns 第二条指向本机 dnsmasq，
+# 故必须给 dnsmasq 配上游，否则 OC 崩溃时兜底解析失败(注释声称走阿里云、实际此前未配 → 死兜底)。
+# noresolv=1 不读 resolv.conf(旁路由无 wan、resolv.conf 为空)，仅用下列阿里云兜底。
+uci -q delete dhcp.@dnsmasq[0].server
+uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
+uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
+uci set dhcp.@dnsmasq[0].noresolv='1'
 uci commit dhcp
 
 LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
@@ -327,10 +334,10 @@ EOT
             cat >> "$OUT" <<EOT
 $ADGH_ENABLE_BLK
 EOT
-        fi
-        cat >> "$OUT" <<EOT
+            cat >> "$OUT" <<EOT
 $DNS_HIJACK_BLK
 EOT
+        fi
     else
         cat >> "$OUT" <<EOT
 $WAN_BLK
