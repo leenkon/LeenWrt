@@ -122,21 +122,20 @@ before)
         fi
     fi
 
-    # fanchmwrt 系统主题标题覆盖：恢复 LuCI 标准动态标题，替代硬编码 "FanchmWrt"
-    # 主题目录为构建期动态拉取(gitignored)、build.sh 3.6 已在本次 before 前拉取；此处就地修改，重拉/CI 均生效
+    # 覆盖 fanchmwrt 主题硬编码标题为 LuCI 动态标题（主题由 build.sh 3.6 拉取）
     _THEME_HEADER="$PROJECT_ROOT/feeds/fwx/luci-theme-fanchmwrt/ucode/template/themes/fanchmwrt/header.ut"
     if [ -f "$_THEME_HEADER" ]; then
         python3 - "$_THEME_HEADER" <<'PY'
-import sys
+import sys, re
 p = sys.argv[1]
 s = open(p, encoding='utf-8').read()
-old = '<title>FanchmWrt</title>'
 new = "<title>{{ hostname }}{{ node?.title ? ` - ${striptags(node.title)}` : '' }} - LuCI</title>"
-if old in s:
-    open(p, 'w', encoding='utf-8').write(s.replace(old, new, 1))
+m = re.sub(r'<title>.*?</title>', new, s, count=1, flags=re.S)
+if m != s:
+    open(p, 'w', encoding='utf-8').write(m)
     print("[diy] 主题标题已覆盖为 LuCI 动态标题")
 else:
-    print("[diy] 主题标题行未匹配，跳过（可能 upstream 已改）")
+    print("[diy] 未在 header.ut 找到 <title> 标签，跳过")
 PY
     fi
     ;;
