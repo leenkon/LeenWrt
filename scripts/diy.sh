@@ -436,6 +436,12 @@ chmod 755 /etc/init.d/cpufreq-perf
 # 首启离线安装 apps/ 的 .apk：仅 enable，由 rc.d(S99) 启动后期执行(避免早期 apk 库未就绪)
 /etc/init.d/firstboot-pkgs enable
 
+# 主题默认浅色（99-custom 字典序后于 100_fwx，覆盖 fwx 出厂 theme_mode=1）
+if uci -q get fwx.global >/dev/null 2>&1; then
+    uci set fwx.global.theme_mode='0'
+    uci commit fwx
+fi
+
 logger -t uci-defaults "配置应用完成"
 EOT
     chmod 755 "$OUT"
