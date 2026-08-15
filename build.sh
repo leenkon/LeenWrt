@@ -199,8 +199,6 @@ fi
 # 3.6 fanchmwrt 系统主题动态拉取（默认主题 fanchmwrt，bootstrap 作基础）
 pull_fcm_package "$THEME_UPSTREAM_PATH" "$SCRIPT_DIR/feeds/fwx/luci-theme-fanchmwrt" "$SCRIPT_DIR/feeds/fwx/luci-theme-fanchmwrt/.theme_commit" "$THEME_COMMIT" "luci-theme-fanchmwrt"
 
-# 3.7（主题标题覆盖已移至 diy.sh before 阶段：fanchmwrt 主题标题 -> LuCI 动态标题）
-
 # 4. 配置
 echo -e "\n${YELLOW}[4/7] 准备配置...${NC}"
 cd "$OPENWRT_DIR"

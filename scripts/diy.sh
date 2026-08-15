@@ -434,7 +434,6 @@ chmod 755 /etc/init.d/cpufreq-perf
 /etc/init.d/cpufreq-perf start
 
 # 首启离线安装 apps/ 的 .apk：仅 enable，由 rc.d(S99) 启动后期执行(避免早期 apk 库未就绪)
-chmod 755 /etc/init.d/firstboot-pkgs
 /etc/init.d/firstboot-pkgs enable
 
 logger -t uci-defaults "配置应用完成"
