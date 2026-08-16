@@ -1,0 +1,47 @@
+#!/bin/sh /etc/rc.common
+#
+# AdGuardHome 启动脚本（官方预编译二进制方案）
+# 取代 feeds 包的 init：以 root 运行（绑定 53 需特权），无需 capabilities jail。
+# 配置复用 files/etc/adguardhome/adguardhome.yaml，运行时数据放在 /var/lib/adguardhome。
+
+START=19
+STOP=89
+USE_PROCD=1
+
+PROG=/usr/bin/AdGuardHome
+
+boot() {
+	ADGUARDHOME_BOOT=1
+	start "$@"
+}
+
+start_service() {
+	# 开机阶段先不启动，等接口 up 后再拉起，避免网络未就绪导致解析失败
+	[ -n "$ADGUARDHOME_BOOT" ] && return 0
+
+	config_load adguardhome
+	local enabled
+	config_get_bool enabled config enabled 1
+	[ "$enabled" = "1" ] || return 1
+
+	mkdir -m 0700 -p /var/lib/adguardhome
+
+	procd_open_instance adguardhome
+	procd_set_param command "$PROG" \
+		--config /etc/adguardhome/adguardhome.yaml \
+		--work-dir /var/lib/adguardhome \
+		--no-check-update \
+		--logfile syslog
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_set_param respawn
+	procd_close_instance
+}
+
+service_triggers() {
+	procd_add_reload_trigger adguardhome
+	if [ -n "$ADGUARDHOME_BOOT" ]; then
+		# 等待接口 up 后真正启动（解决 https://github.com/openwrt/packages/issues/21868 类问题）
+		procd_add_raw_trigger 'interface.*.up' 5000 /etc/init.d/adguardhome restart
+	fi
+}

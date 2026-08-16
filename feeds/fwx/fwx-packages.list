@@ -1,0 +1,21 @@
+# fwx 应用过滤栈包清单（被 build.sh 与 workflow 共用，避免两处重复维护）
+# 格式：每行一个包名（不含 CONFIG_PACKAGE_ 前缀与 =y）；# 开头为注释，空行忽略
+kmod-fwx
+fwxd
+libfwx_common
+libmosquitto
+libsqlite3
+luci-app-fwx-appfilter
+luci-app-fwx-dashboard
+luci-app-fwx-dashboard-setting
+luci-app-fwx-feature
+luci-app-fwx-mac-blacklist
+luci-app-fwx-macfilter
+luci-app-fwx-network
+luci-app-fwx-record
+luci-app-fwx-record-whitelist
+luci-app-fwx-resources
+luci-app-fwx-session-stat
+luci-app-fwx-system
+luci-app-fwx-user
+luci-app-fwx-user-record

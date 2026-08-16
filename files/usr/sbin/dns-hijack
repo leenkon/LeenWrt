@@ -1,0 +1,37 @@
+#!/bin/sh
+if ! command -v nft >/dev/null 2>&1; then
+    logger -t dns-hijack "ERROR: nft not found"
+    exit 0
+fi
+
+nft delete table inet dns_hijack 2>/dev/null
+nft add table inet dns_hijack
+# 早于 firewall4 的 dstnat(-100) 执行,确保 DNS 劫持优先于其它 NAT 规则
+nft add chain inet dns_hijack prerouting '{ type nat hook prerouting priority -150; }'
+
+# 劫持目标固定为本机 :53 解析器(主路由=dnsmasq 转发旁路过滤;完整路由=AdGuardHome)。
+# 旁路 IP 由 99-custom 显式写入 /etc/config/dns_hijack(settings.bypass_ip / bypass_ip6)。
+# 未配置即视为无旁路(全劫持);不再运行时反查 /etc/config/dhcp,避免主路由模式下
+# 探测失败(如 server 列表格式变化)把旁路由自身查询也劫持回环、形成 DNS 环路。
+BYPASS_IP=$(uci -q get dns_hijack.settings.bypass_ip 2>/dev/null)
+BYPASS_IP6=$(uci -q get dns_hijack.settings.bypass_ip6 2>/dev/null)
+
+if [ -n "$BYPASS_IP" ]; then
+    # 主路由模式：放行旁路由自身的查询,否则其上游解析被劫回本机形成 DNS 环路
+    nft add rule inet dns_hijack prerouting ip saddr != $BYPASS_IP udp dport 53 redirect to :53
+    nft add rule inet dns_hijack prerouting ip saddr != $BYPASS_IP tcp dport 53 redirect to :53
+    if [ -n "$BYPASS_IP6" ]; then
+        nft add rule inet dns_hijack prerouting ip6 saddr != $BYPASS_IP6 udp dport 53 redirect to :53
+        nft add rule inet dns_hijack prerouting ip6 saddr != $BYPASS_IP6 tcp dport 53 redirect to :53
+    else
+        # inet 表内按协议族全量匹配须用 meta nfproto ipv6(ip6 无 saddr 条件时不能单独作限定)
+        nft add rule inet dns_hijack prerouting meta nfproto ipv6 udp dport 53 redirect to :53
+        nft add rule inet dns_hijack prerouting meta nfproto ipv6 tcp dport 53 redirect to :53
+    fi
+    logger -t dns-hijack "nftables DNS hijack applied (bypass: ${BYPASS_IP}${BYPASS_IP6:+ / $BYPASS_IP6})"
+else
+    # 完整路由模式：无旁路 IP,IPv4/IPv6 全量劫持
+    nft add rule inet dns_hijack prerouting udp dport 53 redirect to :53
+    nft add rule inet dns_hijack prerouting tcp dport 53 redirect to :53
+    logger -t dns-hijack "nftables DNS hijack applied (full router, no bypass)"
+fi
