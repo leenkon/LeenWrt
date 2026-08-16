@@ -1,0 +1,81 @@
+--- a/src/fwx_main.c
++++ b/src/fwx_main.c
+@@ -1162,6 +1162,9 @@
+ 	unsigned char *msg_buf = NULL;
+ 	unsigned int consumed = 0;
+ 
++	if (!skb || len == 0 || from >= skb->len || len > skb->len - from)
++		return NULL;
++
+ 	msg_buf = kmalloc(len, GFP_KERNEL);
+ 	if (!msg_buf)
+ 		return NULL;
+@@ -1220,18 +1223,49 @@
+ 		return -1;
+ 	}
+ 
++	/* Bind the L4 payload to the real skb tail so a malformed packet
++	 * (forged iph->tot_len / tcph->doff / udph->len) cannot make the DPI
++	 * parsers read past the skb and oops the kernel (was fwx_match_feature
++	 * -> af_is_flow_host_ip_literal memcpy from an OOB url_pos/host_pos). */
++	{
++		unsigned char *tail = skb_tail_pointer(skb);
++		int avail;
++
++		if (ipp >= tail)
++			return -1;
++		avail = (int)(tail - ipp);
++		if (ipp_len > avail)
++			ipp_len = avail;
++		if (ipp_len < 0)
++			ipp_len = 0;
++	}
++
+ 	switch (flow->l4_protocol)
+ 	{
+ 	case IPPROTO_TCP:
++		if (ipp_len < (int)sizeof(struct tcphdr))
++			return -1;
+ 		tcph = (struct tcphdr *)ipp;
++		if (tcph->doff < 5 || (int)(tcph->doff * 4) > ipp_len)
++			return -1;
+ 		flow->l4_len = ipp_len - tcph->doff * 4;
+ 		flow->l4_data = ipp + tcph->doff * 4;
+ 		flow->dport = ntohs(tcph->dest);
+ 		flow->sport = ntohs(tcph->source);
+ 		return 0;
+ 	case IPPROTO_UDP:
++		if (ipp_len < (int)sizeof(struct udphdr))
++			return -1;
+ 		udph = (struct udphdr *)ipp;
+-		flow->l4_len = ntohs(udph->len) - 8;
++		{
++			int udp_len = ntohs(udph->len);
++
++			if (udp_len < 8)
++				return -1;
++			if (udp_len > ipp_len)
++				udp_len = ipp_len;
++			flow->l4_len = udp_len - 8;
++		}
+ 		flow->l4_data = ipp + 8;
+ 		flow->dport = ntohs(udph->dest);
+ 		flow->sport = ntohs(udph->source);
+@@ -1279,7 +1313,7 @@
+ 	if (!((p[0] == 0x16 && p[1] == 0x03 && p[5] == 0x01) || flow->client_hello))
+ 		return -1;
+ 
+-	for (i = 0; i < data_len; i++)
++	for (i = 0; i + 3 < data_len; i++)
+ 	{
+ 		if (i + HTTPS_URL_OFFSET >= data_len)
+ 		{
+@@ -1341,7 +1375,7 @@
+ 		return;
+ 	}
+ 
+-	for (i = 0; i < data_len; i++)
++	for (i = 0; i + 3 < data_len; i++)
+ 	{
+ 		if (data[i] == 0x0d && data[i + 1] == 0x0a)
+ 		{

@@ -114,6 +114,19 @@ before)
         else
             echo "[diy] WARN: 未找到 fwx kmod 补丁 $FWX_KMOD_PATCH (kmod-fwx 可能编译失败)" >&2
         fi
+
+        # kmod-fwx DPI 边界守卫：防止畸形/截断包在 fwx_match_feature 路径越界读 skb 触发内核 oops（真因见工作日志）
+        FWX_CRASH_PATCH="$PROJECT_ROOT/patches/fwx/fwx-match-feature-crash.patch"
+        if [ -f "$FWX_CRASH_PATCH" ]; then
+            if patch -p1 --dry-run -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_CRASH_PATCH" >/dev/null 2>&1; then
+                patch -p1 --forward -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_CRASH_PATCH"
+                echo "[diy] applied fwx DPI bounds patch -> feeds/fwx/fwx/src/fwx_main.c"
+            else
+                echo "[diy] fwx DPI bounds patch 已应用或上下文不符，跳过(详见 $FWX_CRASH_PATCH)"
+            fi
+        else
+            echo "[diy] WARN: 未找到 fwx DPI 边界守卫补丁 $FWX_CRASH_PATCH" >&2
+        fi
     fi
 
     # 覆盖 fanchmwrt 主题硬编码标题为 LuCI 动态标题（主题由 build.sh 3.6 拉取）
