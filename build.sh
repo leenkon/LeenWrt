@@ -70,7 +70,7 @@ GATEWAY_IP=""
 PPPOE_USER="" PPPOE_PASS=""
 [[ "$RUN_TYPE" == "full" ]] && { read -p "配置PPPoE? [y/N]: " pp; [[ "$pp" =~ ^[Yy]$ ]] && { read -p "用户名: " PPPOE_USER; read -p "密码: " PPPOE_PASS; success "PPPoE已配置"; } || success "使用DHCP"; }
 
-# OC / ADGH：旁路由固定启用；完整路由改为独立勾选（合并原 Main/Full/Full-noadgh 为单一 Full + 勾选）
+# OC / ADGH：旁路由(Mini)固定启用；完整路由(Full)由下方交互勾选决定
 WITH_OC="false"; WITH_ADGH="false"
 if [[ "$RUN_TYPE" == "bypass" ]]; then
   WITH_OC=true; WITH_ADGH=true
@@ -214,7 +214,7 @@ cd "$OPENWRT_DIR"
 "$DIY" -v "$MAIN_VER" -p before -t "$RUN_TYPE" --feeds "$FEEDS_FILE_ABS" ${FWX_FLAG}
 ./scripts/feeds update -a
 
-# OpenClash LuCI 替换（仅 leenwrt 旁路由 / 完整路由）
+# OpenClash LuCI 替换（仅 Mini 旁路由 / Full 勾选 OC 时）
 if [[ "$WITH_OC" == "true" ]]; then
   "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
 fi
@@ -298,11 +298,11 @@ success "完成"
 
 # 6. 预装核心 + 打包 files
 echo -e "\n${YELLOW}[6/7] 预装核心与打包文件...${NC}"
-# OpenClash Meta 核心预装（仅 leenwrt 旁路由 + 完整路由）
+# OpenClash Meta 核心预装（仅 Mini 旁路由 / Full 勾选 OC 时）
 if [[ "$WITH_OC" == "true" ]]; then
     "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR" --files-dir "$FILES_DIR_ABS"
 fi
-# AdGuardHome 官方预编译二进制注入（仅 leenwrt 旁路由 + 完整路由；未勾选 AdGuardHome 时不注入）
+# AdGuardHome 官方预编译二进制注入（仅 Mini 旁路由 / Full 勾选 AdGuardHome 时；未勾选时不注入）
 if [[ "$WITH_ADGH" == "true" ]]; then
     "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR" --files-dir "$FILES_DIR_ABS"
 fi
