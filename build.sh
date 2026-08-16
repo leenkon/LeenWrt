@@ -89,6 +89,12 @@ else
   [ "$WITH_FWX" = "true" ] && success "将包含 fwx 应用过滤"
 fi
 
+# 仅当显式开启时才传 --with-fwx。注意不可用 ${WITH_FWX:+"--with-fwx"}：
+# WITH_FWX="false" 时 "false" 为非空串仍会展开成 --with-fwx，导致 diy.sh 误判开启、
+# 注入 950 内核补丁(fwx_data)等。必须用显式 true 判断。
+FWX_FLAG=""
+[ "$WITH_FWX" = "true" ] && FWX_FLAG="--with-fwx"
+
 # 旁路 IP (主路由，用于 DNS 劫持排除规则和 DHCP DNS 选项)
 BYPASS_IP=""
 if [[ "$RUN_TYPE" == "main" ]]; then
@@ -208,7 +214,7 @@ pull_fcm_package "$THEME_UPSTREAM_PATH" "$SCRIPT_DIR/feeds/fwx/luci-theme-fanchm
 # 4. 配置
 echo -e "\n${YELLOW}[4/7] 准备配置...${NC}"
 cd "$OPENWRT_DIR"
-"$DIY" -v "$MAIN_VER" -p before -t "$RUN_TYPE" --feeds "$FEEDS_FILE_ABS" ${WITH_FWX:+"--with-fwx"}
+"$DIY" -v "$MAIN_VER" -p before -t "$RUN_TYPE" --feeds "$FEEDS_FILE_ABS" ${FWX_FLAG}
 ./scripts/feeds update -a
 
 # OpenClash LuCI 替换（仅 leenwrt 旁路由 / 完整路由）
@@ -257,13 +263,16 @@ if [[ "$WITH_FWX" = "true" ]]; then
 fi
 
 # fwx/fwxluci 为本地 feed，不作设备端远程 apk 仓库(官方镜像无 packages.adb，否则 apk update 404)；设 m 即注释保留。
-for _f in fwx fwxluci; do
-  if ! grep -q "^CONFIG_FEED_${_f}=" .config; then
-    printf 'CONFIG_FEED_%s=m\n' "$_f" >> .config
-  else
-    sed -i "s/^CONFIG_FEED_${_f}=y/CONFIG_FEED_${_f}=m/" .config
-  fi
-done
+# 仅开启 fwx 时注册这两个 feed；不开启则连 feed 都不启用，杜绝任何 fwx 相关包被自动选中。
+if [[ "$WITH_FWX" = "true" ]]; then
+  for _f in fwx fwxluci; do
+    if ! grep -q "^CONFIG_FEED_${_f}=" .config; then
+      printf 'CONFIG_FEED_%s=m\n' "$_f" >> .config
+    else
+      sed -i "s/^CONFIG_FEED_${_f}=y/CONFIG_FEED_${_f}=m/" .config
+    fi
+  done
+fi
 success "完成"
 
 # 5. 网络配置
@@ -277,7 +286,7 @@ NOADGH_ARG=""
   ${BYPASS_IP:+--bypass-ip "$BYPASS_IP"} \
   ${PPPOE_USER:+--pppoe-user "$PPPOE_USER"} ${PPPOE_PASS:+--pppoe-pass "$PPPOE_PASS"} \
   ${NOADGH_ARG:+"$NOADGH_ARG"} \
-  ${WITH_FWX:+"--with-fwx"} \
+  ${FWX_FLAG} \
   --root-pass "$ROOT_PWD"
 success "完成"
 
