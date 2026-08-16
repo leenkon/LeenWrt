@@ -25,7 +25,7 @@ DNS_BACKUP="223.6.6.6"
 
 VERSION="" PHASE="" PROFILE_TYPE="" FEEDS_SRC="" FILES_DIR_NAME="files"
 NO_ADGH=0 WITH_FWX=0
-CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" BYPASS_IP6="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
+CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" BYPASS_IP6="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD="" LOG_SERVER=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -41,6 +41,7 @@ while [ $# -gt 0 ]; do
         --bypass-ip6) BYPASS_IP6="$2"; shift 2 ;;
         --no-adgh)   NO_ADGH=1; shift ;;
         --with-fwx)  WITH_FWX=1; shift ;;
+        --log-server) LOG_SERVER="$2"; shift 2 ;;
         --feeds)     FEEDS_SRC="$2"; shift 2 ;;
         --files-dir) FILES_DIR_NAME="$2"; shift 2 ;;
         *) error_exit "未知参数 $1" ;;
@@ -129,6 +130,21 @@ before)
         fi
     fi
 
+    # 启用内核 pstore/ramoops（崩溃日志掉电持久化：用于区分"硬重启"与"真断流"；
+    # 纯内核配置片段，非源码补丁——immortalWrt 25.12.1 未在 Config-kernel.in 暴露这些符号）
+    _pstore_frag="$PROJECT_ROOT/configs/kernel-6.12-pstore.fragment"
+    if [ -f "$_pstore_frag" ]; then
+        _gen_cfg="target/linux/generic/config-6.12"
+        if [ -f "$_gen_cfg" ]; then
+            while read -r _l; do
+                [ -z "$_l" ] && continue
+                grep -qxF "$_l" "$_gen_cfg" 2>/dev/null && continue
+                echo "$_l" >> "$_gen_cfg"
+            done < "$_pstore_frag"
+            echo "[diy] enabled pstore/ramoops in $_gen_cfg"
+        fi
+    fi
+
     # 覆盖 fanchmwrt 主题硬编码标题为 LuCI 动态标题（主题由 build.sh 3.6 拉取）
     _THEME_HEADER="$PROJECT_ROOT/feeds/fwx/luci-theme-fanchmwrt/ucode/template/themes/fanchmwrt/header.ut"
     if [ -f "$_THEME_HEADER" ]; then
@@ -179,6 +195,7 @@ after)
     rm -f "$OUT" "$SHADOW"
 
     ip_esc=$(_escape_uci "$CUSTOM_IP")
+    log_server_esc=$(_escape_uci "$LOG_SERVER")
 
         # ===== 公共配置块（各 profile 按需引用） =====
     # IP 转发开关：所有 profile 统一开启
@@ -248,12 +265,26 @@ uci -q get upnpd.config >/dev/null || uci set upnpd.config=upnpd
 uci set upnpd.config.enabled='1'
 uci set upnpd.config.internal_iface='lan'
 uci set upnpd.config.external_iface='wan'
-uci set upnpd.config.secure='1'
+# secure=0：放宽 miniupnpd secure_mode。原 secure=1 对部分 LAN 客户端(游戏机/老设备)过严，
+# 会丢弃其 UPnP 映射请求导致"UPnP 无客户端"；miniupnpd 仅监听 internal_iface(lan)，不外泄到 wan。
+uci set upnpd.config.secure='0'
 uci commit upnpd
 /etc/init.d/miniupnpd enable
 /etc/init.d/miniupnpd restart
 EOF
 )
+
+    # 远程 syslog（仅 --log-server 指定时生成）：UDP 514 推给对端 syslog 采集端，非网页访问
+    if [ -n "$LOG_SERVER" ]; then
+        REMOTE_SYSLOG_BLK=$(cat <<EOF
+uci set system.@system[0].log_ip='$log_server_esc'
+uci set system.@system[0].log_port='514'
+uci set system.@system[0].log_proto='udp'
+EOF
+)
+    else
+        REMOTE_SYSLOG_BLK=""
+    fi
 
     # full/main 共用：DHCP 公共段（范围、RA、下发单 DNS 等）
     DHCP_COMMON_BLK=$(cat <<EOF
@@ -440,6 +471,15 @@ uci -q delete system.ntp.server
 uci add_list system.ntp.server='ntp.aliyun.com'
 uci add_list system.ntp.server='cn.pool.ntp.org'
 uci commit system
+
+# 系统日志持久化：logd 默认只存 RAM 环形缓冲，重启即失（无法回看 oops 前日志）。
+# log_file 落盘到 /root（重启保留，按 log_size KiB 滚动为 syslog.log + .old）；log_buffer_size 单独调大 RAM 缓冲供网页实时查看。
+uci set system.@system[0].log_file='/root/syslog.log'
+uci set system.@system[0].log_size='512'
+uci set system.@system[0].log_buffer_size='256'
+$REMOTE_SYSLOG_BLK
+uci commit system
+/etc/init.d/log restart
 
 # 固定 CPU 为 performance，避免降频导致网络抖动
 chmod 755 /etc/init.d/cpufreq-perf
