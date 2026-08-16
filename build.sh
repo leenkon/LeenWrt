@@ -320,6 +320,8 @@ case "$RUN_TYPE" in
       rm -f "$OPENWRT_DIR/files/usr/bin/AdGuardHome"
       rm -f "$OPENWRT_DIR/files/etc/init.d/adguardhome"
       rm -f "$OPENWRT_DIR/files/etc/config/adguardhome"
+      # full-noadgh 不劫持 DNS(dnsmasq :53 + OC 兜底),dns-hijack 无人调用,移除
+      rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
     fi
     ;;
 esac
