@@ -42,20 +42,17 @@ success "版本: $VERSION"
 
 # ========== 配置选择 ==========
 echo -e "\n请选择编译配置："
-echo "  1) Main (主路由)  2) Mini (旁路由)  3) Full (完整路由)  4) Full-noadgh (完整路由无ADGH)"
-read -p "请输入选择 [1-4，默认 1]: " p
+echo "  1) Full (完整路由/主路由)  2) Mini (旁路由)"
+read -p "请输入选择 [1-2，默认 1]: " p
 p=${p:-1}
-case "$p" in 1) PROFILE="Main";; 2) PROFILE="Mini";; 3) PROFILE="Full";; 4) PROFILE="Full-noadgh";; *) error_exit "无效选择";; esac
+case "$p" in 1) PROFILE="Full";; 2) PROFILE="Mini";; *) error_exit "无效选择";; esac
 
-# 解析配置（显式映射，避免按 '-' 拆分带来的歧义）
+# 解析配置（Full = 完整路由/主路由基底；Mini = 旁路由 bypass）
 case "$PROFILE" in
-  Main)        CFG_PREFIX=default; RUN_TYPE=main;;
-  Mini)        CFG_PREFIX=mini;    RUN_TYPE=bypass;;
-  Full)        CFG_PREFIX=full;    RUN_TYPE=full;;
-  Full-noadgh) CFG_PREFIX=full;    RUN_TYPE=full; NO_ADGH="true";;
+  Full) CFG_PREFIX=full; RUN_TYPE=full;;
+  Mini) CFG_PREFIX=mini; RUN_TYPE=bypass;;
   *) error_exit "无效配置: $PROFILE";;
 esac
-NO_ADGH=${NO_ADGH:-false}
 MAIN_VER=${VERSION%.*}
 
 # 自定义IP
@@ -69,14 +66,19 @@ success "LAN IP: $ROUTER_IP"
 GATEWAY_IP=""
 [[ "$RUN_TYPE" == "bypass" ]] && { read -p "网关IP [默认: $DEF_GATEWAY]: " gw; GATEWAY_IP="${gw:-$DEF_GATEWAY}"; success "网关: $GATEWAY_IP"; }
 
-# PPPoE (主路由/完整路由)
+# PPPoE (完整路由)
 PPPOE_USER="" PPPOE_PASS=""
-[[ "$RUN_TYPE" == "main" || "$RUN_TYPE" == "full" ]] && { read -p "配置PPPoE? [y/N]: " pp; [[ "$pp" =~ ^[Yy]$ ]] && { read -p "用户名: " PPPOE_USER; read -p "密码: " PPPOE_PASS; success "PPPoE已配置"; } || success "使用DHCP"; }
+[[ "$RUN_TYPE" == "full" ]] && { read -p "配置PPPoE? [y/N]: " pp; [[ "$pp" =~ ^[Yy]$ ]] && { read -p "用户名: " PPPOE_USER; read -p "密码: " PPPOE_PASS; success "PPPoE已配置"; } || success "使用DHCP"; }
 
-# OC / ADGH：leenwrt 全功能（旁路由/完整路由启用）
+# OC / ADGH：旁路由固定启用；完整路由改为独立勾选（合并原 Main/Full/Full-noadgh 为单一 Full + 勾选）
 WITH_OC="false"; WITH_ADGH="false"
-[[ "$RUN_TYPE" == "bypass" || "$RUN_TYPE" == "full" ]] && WITH_OC=true
-[[ "$RUN_TYPE" == "bypass" || ("$RUN_TYPE" == "full" && "$NO_ADGH" != "true") ]] && WITH_ADGH=true
+if [[ "$RUN_TYPE" == "bypass" ]]; then
+  WITH_OC=true; WITH_ADGH=true
+else
+  read -p "包含 OpenClash 代理? [Y/n]: " oc; WITH_OC=true; [[ "$oc" =~ ^[Nn]$ ]] && WITH_OC="false"
+  read -p "包含 AdGuardHome 去广告? [Y/n]: " adgh; WITH_ADGH=true; [[ "$adgh" =~ ^[Nn]$ ]] && WITH_ADGH="false"
+fi
+NO_ADGH="false"; [ "$WITH_ADGH" = "false" ] && NO_ADGH="true"
 
 # fwx 应用过滤（可选，默认开启）：包清单见 feeds/fwx/fwx-packages.list
 # 旁路由不安装 fwx：应用过滤在主路由/完整路由生效；且旁路由无 fwx 自定义页面，故可安全启用 argon 主题
@@ -95,13 +97,9 @@ fi
 FWX_FLAG=""
 [ "$WITH_FWX" = "true" ] && FWX_FLAG="--with-fwx"
 
-# 旁路 IP (主路由，用于 DNS 劫持排除规则和 DHCP DNS 选项)
-BYPASS_IP=""
-if [[ "$RUN_TYPE" == "main" ]]; then
-  read -p "旁路路由IP [默认: $DEF_BYPASS_IP，回车跳过]: " bip
-  BYPASS_IP="${bip:-$DEF_BYPASS_IP}"
-  success "旁路IP: $BYPASS_IP"
-fi
+# 同理，OC 仅显式开启时才传 --with-oc（避免 "false" 非空串误展开）
+OC_FLAG=""
+[ "$WITH_OC" = "true" ] && OC_FLAG="--with-oc"
 
 # Root密码
 read -p "Root密码 [默认: password]: " rp
@@ -113,7 +111,6 @@ echo -e "\n========================================  准备编译  =============
 echo "  核心: $CORE | 版本: $VERSION | 配置: $PROFILE | IP: $ROUTER_IP | 类型: $RUN_TYPE"
 [[ -n "$GATEWAY_IP" ]] && echo "  网关: $GATEWAY_IP"
 [[ -n "$PPPOE_USER" ]] && echo "  PPPoE: $PPPOE_USER"
-[[ -n "$BYPASS_IP" ]] && echo "  旁路IP: $BYPASS_IP"
 echo "==================================================================================="
 read -p "确认开始? [Y/n]: " c; [[ "$c" =~ ^[Nn]$ ]] && exit 0
 
@@ -238,13 +235,6 @@ fi
 # leenwrt：直接套用本地 .config 种子（configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config）
 cp "$SCRIPT_DIR/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在: configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config"
 sed -i 's/\r$//' .config
-# Full-noadgh：本 profile 不注入 ADGH 引擎，移除 LuCI 壳避免“有菜单无服务”
-if [[ "$RUN_TYPE" = "full" && "$NO_ADGH" = "true" ]]; then
-  sed -i 's/^CONFIG_PACKAGE_luci-app-adguardhome=y/# &/' .config
-  sed -i 's/^CONFIG_PACKAGE_luci-i18n-adguardhome-zh-cn=y/# &/' .config
-  echo "[build] Full-noadgh: 已禁用 luci-app-adguardhome（无引擎）"
-fi
-
 # fwx 应用过滤（可选）：包清单见 feeds/fwx/fwx-packages.list
 if [[ "$WITH_FWX" = "true" ]]; then
   FWX_LIST="$SCRIPT_DIR/feeds/fwx/fwx-packages.list"
@@ -273,20 +263,36 @@ if [[ "$WITH_FWX" = "true" ]]; then
     fi
   done
 fi
+
+# OpenClash / AdGuardHome 选装包（勾选时注入，复用 fwx 的包清单模式）
+_inject_pkg_list() {
+  local _list="$1" _label="$2"
+  [ -f "$_list" ] || return 0
+  {
+    echo ""
+    echo "# ===== $_label ====="
+    while read -r _pkg; do
+      [[ -n "$_pkg" && "$_pkg" != \#* ]] && echo "CONFIG_PACKAGE_${_pkg}=y"
+    done < "$_list"
+  } >> .config
+  echo "[build] 已追加 $_label（来自 $_list）"
+}
+[ "$WITH_OC" = "true" ] && _inject_pkg_list "$SCRIPT_DIR/configs/oc-packages.list" "OpenClash 选装包"
+[ "$WITH_ADGH" = "true" ] && _inject_pkg_list "$SCRIPT_DIR/configs/adgh-packages.list" "AdGuardHome 选装包"
+
 success "完成"
 
 # 5. 网络配置
 echo -e "\n${YELLOW}[5/7] 生成网络配置...${NC}"
-# --no-adgh 仅在 NO_ADGH=true 时传入（leenwrt Full-noadgh）
+# --no-adgh 仅在 NO_ADGH=true 时传入（Full 未勾选 AdGuardHome 时）
 NOADGH_ARG=""
 [ "$NO_ADGH" = "true" ] && NOADGH_ARG="--no-adgh"
 "$DIY" -v "$MAIN_VER" -p after -t "$RUN_TYPE" --files-dir "$FILES_DIR_ABS" \
   ${ROUTER_IP:+--ip "$ROUTER_IP"} \
   ${GATEWAY_IP:+--gateway "$GATEWAY_IP"} \
-  ${BYPASS_IP:+--bypass-ip "$BYPASS_IP"} \
   ${PPPOE_USER:+--pppoe-user "$PPPOE_USER"} ${PPPOE_PASS:+--pppoe-pass "$PPPOE_PASS"} \
   ${NOADGH_ARG:+"$NOADGH_ARG"} \
-  ${FWX_FLAG} \
+  ${FWX_FLAG} ${OC_FLAG} \
   --root-pass "$ROOT_PWD"
 success "完成"
 
@@ -296,7 +302,7 @@ echo -e "\n${YELLOW}[6/7] 预装核心与打包文件...${NC}"
 if [[ "$WITH_OC" == "true" ]]; then
     "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR" --files-dir "$FILES_DIR_ABS"
 fi
-# AdGuardHome 官方预编译二进制注入（仅 leenwrt 旁路由 + 完整路由；Full-noadgh 不注入）
+# AdGuardHome 官方预编译二进制注入（仅 leenwrt 旁路由 + 完整路由；未勾选 AdGuardHome 时不注入）
 if [[ "$WITH_ADGH" == "true" ]]; then
     "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR" --files-dir "$FILES_DIR_ABS"
 fi
@@ -317,26 +323,23 @@ else
   echo "[build] 警告: apps/ 下无 .apk，自定义离线包将不会随固件安装"
 fi
 
-# 文件清理：按 profile 删除不需要的静态文件（在 openwrt 副本上操作，不修改源树）
+# 文件清理：按勾选删除不需要的静态文件（在 openwrt 副本上操作，不修改源树）
 case "$RUN_TYPE" in
-  main)
-    rm -rf "$OPENWRT_DIR/files/etc/adguardhome"
-    rm -rf "$OPENWRT_DIR/files/etc/openclash"
-    rm -f "$OPENWRT_DIR/files/usr/bin/AdGuardHome"
-    rm -f "$OPENWRT_DIR/files/etc/init.d/adguardhome"
-    rm -f "$OPENWRT_DIR/files/etc/config/adguardhome"
-    ;;
   bypass)
     rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
     ;;
   full)
-    if [ "$NO_ADGH" = "true" ]; then
+    # 未勾选 AdGuardHome：清理 ADGH 静态文件，且不劫持 DNS(dnsmasq 占 :53)
+    if [ "$WITH_ADGH" = "false" ]; then
       rm -rf "$OPENWRT_DIR/files/etc/adguardhome"
       rm -f "$OPENWRT_DIR/files/usr/bin/AdGuardHome"
       rm -f "$OPENWRT_DIR/files/etc/init.d/adguardhome"
       rm -f "$OPENWRT_DIR/files/etc/config/adguardhome"
-      # full-noadgh 不劫持 DNS(dnsmasq :53 + OC 兜底),dns-hijack 无人调用,移除
       rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
+    fi
+    # 未勾选 OpenClash：清理 OC 静态文件
+    if [ "$WITH_OC" = "false" ]; then
+      rm -rf "$OPENWRT_DIR/files/etc/openclash"
     fi
     ;;
 esac

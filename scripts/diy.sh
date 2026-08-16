@@ -24,7 +24,7 @@ DNS_MAIN="223.5.5.5"
 DNS_BACKUP="223.6.6.6"
 
 VERSION="" PHASE="" PROFILE_TYPE="" FEEDS_SRC="" FILES_DIR_NAME="files"
-NO_ADGH=0 WITH_FWX=0
+NO_ADGH=0 WITH_FWX=0 WITH_OC=0
 CUSTOM_IP="" CUSTOM_GATEWAY="" BYPASS_IP="" BYPASS_IP6="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD="" LOG_SERVER=""
 
 while [ $# -gt 0 ]; do
@@ -37,10 +37,9 @@ while [ $# -gt 0 ]; do
         --pppoe-user) PPPOE_USERNAME="$2"; shift 2 ;;
         --pppoe-pass) PPPOE_PASSWORD="$2"; shift 2 ;;
         --root-pass)  ROOT_PASSWORD="$2"; shift 2 ;;
-        --bypass-ip) BYPASS_IP="$2"; shift 2 ;;
-        --bypass-ip6) BYPASS_IP6="$2"; shift 2 ;;
         --no-adgh)   NO_ADGH=1; shift ;;
         --with-fwx)  WITH_FWX=1; shift ;;
+        --with-oc)   WITH_OC=1; shift ;;
         --log-server) LOG_SERVER="$2"; shift 2 ;;
         --feeds)     FEEDS_SRC="$2"; shift 2 ;;
         --files-dir) FILES_DIR_NAME="$2"; shift 2 ;;
@@ -49,24 +48,18 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$VERSION" ] && [ -n "$PHASE" ] || error_exit "必填 --version / --phase"
-[ "$PHASE" = "after" ] && [ -z "$PROFILE_TYPE" ] && error_exit "after阶段必须指定 --type main/bypass/full"
-case "$PROFILE_TYPE" in ""|main|bypass|full) ;; *) error_exit "--type 仅支持 main / bypass / full" ;; esac
+[ "$PHASE" = "after" ] && [ -z "$PROFILE_TYPE" ] && error_exit "after阶段必须指定 --type full/bypass"
+case "$PROFILE_TYPE" in ""|bypass|full) ;; *) error_exit "--type 仅支持 bypass / full" ;; esac
 
 if [ "$PROFILE_TYPE" = "bypass" ]; then
     [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_BYPASS_IP"
     [ -z "$CUSTOM_GATEWAY" ] && CUSTOM_GATEWAY="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法旁路由IP: $CUSTOM_IP"
     is_valid_ipv4 "$CUSTOM_GATEWAY" || error_exit "非法旁路由网关: $CUSTOM_GATEWAY"
-    [ -n "$PPPOE_USERNAME" ] || [ -n "$PPPOE_PASSWORD" ] && error_exit "旁路由不支持PPPoE，请使用 --type main/full"
-    [ -z "$BYPASS_IP" ] && BYPASS_IP="$CUSTOM_IP"
+    [ -n "$PPPOE_USERNAME" ] || [ -n "$PPPOE_PASSWORD" ] && error_exit "旁路由不支持PPPoE，请使用 --type full"
 elif [ "$PROFILE_TYPE" = "full" ]; then
     [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法路由IP: $CUSTOM_IP"
-else
-    [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_MAIN_IP"
-    is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法主路由IP: $CUSTOM_IP"
-    [ -z "$BYPASS_IP" ] && BYPASS_IP="$DEF_BYPASS_IP"
-    is_valid_ipv4 "$BYPASS_IP" || error_exit "非法旁路路由IP: $BYPASS_IP"
 fi
 
 if [ -n "$PPPOE_USERNAME" ] || [ -n "$PPPOE_PASSWORD" ]; then
@@ -168,7 +161,7 @@ PY
 
 after)
     echo "[diy] after: $PROFILE_TYPE"
-    # NO_ADGH 仅 full 模式有意义；main/bypass 强制 NO_ADGH=0（均带 ADGH，bypass 即 ADGH+OC 旁路由）
+    # bypass 强制 NO_ADGH=0（旁路由即 ADGH+OC 设备）
     [ "$PROFILE_TYPE" != "full" ] && NO_ADGH=0
     case "$FILES_DIR_NAME" in
       /*) FB_DIR="$FILES_DIR_NAME" ;;
@@ -186,7 +179,7 @@ after)
     # IP 转发开关：所有 profile 统一开启
     IP_FORWARD_LN='grep -q '\''net.ipv4.ip_forward=1'\'' /etc/sysctl.conf || echo '\''net.ipv4.ip_forward=1'\'' >> /etc/sysctl.conf'
 
-    # full/main 共用：LAN 静态地址（lan6 删除、ip6assign、proto、ipaddr、netmask）
+    # full 共用：LAN 静态地址（lan6 删除、ip6assign、proto、ipaddr、netmask）
     LAN_WAN_COMMON_BLK=$(cat <<EOF
 uci -q delete network.lan6
 uci set network.lan.ip6assign='64'
@@ -218,7 +211,7 @@ chmod 755 /etc/init.d/adguardhome
 EOF
 )
 
-    # full/main 共用：LAN 区 forward + lan->wan forwarding 重置
+    # full 共用：LAN 区 forward + lan->wan forwarding 重置
     LAN_FORWARD_BLK=$(cat <<'EOF'
 LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 [ -n "$LAN_FW" ] && uci set ${LAN_FW}.forward='ACCEPT'
@@ -232,7 +225,7 @@ uci set firewall.@forwarding[-1].dest='wan'
 EOF
 )
 
-    # full/main 共用：dns-hijack + firewall include（放在最后，避免上游未就绪时形成黑洞）
+    # full 共用：dns-hijack + firewall include（放在最后，避免上游未就绪时形成黑洞）
     DNS_HIJACK_BLK=$(cat <<'EOF'
 chmod 755 /usr/sbin/dns-hijack
 /usr/sbin/dns-hijack
@@ -244,7 +237,7 @@ uci commit firewall
 EOF
 )
 
-    # full/main 共用：启用 UPnP/IGD 并绑 lan->wan（miniupnpd 已编入镜像）
+    # full 共用：启用 UPnP/IGD 并绑 lan->wan（miniupnpd 已编入镜像）
     UPNP_BLK=$(cat <<'EOF'
 uci -q get upnpd.config >/dev/null || uci set upnpd.config=upnpd
 uci set upnpd.config.enabled='1'
@@ -271,7 +264,7 @@ EOF
         REMOTE_SYSLOG_BLK=""
     fi
 
-    # full/main 共用：DHCP 公共段（范围、RA、下发单 DNS 等）
+    # full 共用：DHCP 公共段（范围、RA、下发单 DNS 等）
     DHCP_COMMON_BLK=$(cat <<EOF
 uci -q delete dhcp.lan.dhcp_option
 uci add_list dhcp.lan.dhcp_option='6,$ip_esc'
@@ -287,7 +280,7 @@ EOF
 )
 
     # WAN 段(PPPoE/DHCP)提前生成避免重复；WAN 设备不写死，由 board.d 首启探测(eth1 存在则作 WAN)。
-    if [ "$PROFILE_TYPE" = "full" ] || [ "$PROFILE_TYPE" = "main" ]; then
+    if [ "$PROFILE_TYPE" = "full" ]; then
         if [ -n "$PPPOE_USERNAME" ]; then
             u=$(_escape_uci "$PPPOE_USERNAME"); p=$(_escape_uci "$PPPOE_PASSWORD")
             WAN_BLK=$(cat <<EOT
@@ -371,8 +364,10 @@ $IP_FORWARD_LN
 $DHCP_COMMON_BLK
 EOT
         if [ "$NO_ADGH" = "1" ]; then
-            # noadgh：dnsmasq 占 :53，上游指向 OC redir-host(:7874)+阿里云兜底，OC 停时仍解析。
-            cat >> "$OUT" <<EOT
+            # ADGH 关闭：dnsmasq 占 :53
+            if [ "$WITH_OC" = "1" ]; then
+                # OC 开：dnsmasq 上游指向 OC redir-host(:7874) + 阿里云兜底，OC 停时仍解析
+                cat >> "$OUT" <<EOT
 uci -q delete dhcp.@dnsmasq[0].port
 uci -q delete dhcp.@dnsmasq[0].server
 uci add_list dhcp.@dnsmasq[0].server='127.0.0.1#7874'
@@ -382,8 +377,20 @@ uci set dhcp.@dnsmasq[0].noresolv='1'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
 uci commit dhcp
 EOT
+            else
+                # OC 关 + ADGH 关：dnsmasq 直连上游 DNS（纯主路由，无需旁路）
+                cat >> "$OUT" <<EOT
+uci -q delete dhcp.@dnsmasq[0].port
+uci -q delete dhcp.@dnsmasq[0].server
+uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
+uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
+uci set dhcp.@dnsmasq[0].noresolv='1'
+uci set dhcp.@dnsmasq[0].dns_redirect='0'
+uci commit dhcp
+EOT
+            fi
         else
-            # 带 ADGH：dnsmasq 让出 :53(port 5453)，AdGuardHome 占 :53，纯阿里云兜底。
+            # 带 ADGH：dnsmasq 让出 :53(port 5453)，AdGuardHome 占 :53，纯阿里云兜底
             cat >> "$OUT" <<EOT
 uci -q set dhcp.@dnsmasq[0].port='5453'
 uci -q delete dhcp.@dnsmasq[0].server
@@ -398,47 +405,19 @@ EOT
 $LAN_FORWARD_BLK
 
 $UPNP_BLK
-
+EOT
+        if [ "$WITH_OC" = "1" ]; then
+            cat >> "$OUT" <<EOT
 $OC_CONFIG_BLK
 EOT
+        fi
         if [ "$NO_ADGH" != "1" ]; then
             cat >> "$OUT" <<EOT
 $ADGH_ENABLE_BLK
-EOT
-            cat >> "$OUT" <<EOT
+
 $DNS_HIJACK_BLK
 EOT
         fi
-    else
-        cat >> "$OUT" <<EOT
-$WAN_BLK
-$LAN_WAN_COMMON_BLK
-
-$IP_FORWARD_LN
-
-$DHCP_COMMON_BLK
-uci -q delete dhcp.@dnsmasq[0].server
-uci add_list dhcp.@dnsmasq[0].server='$BYPASS_IP'
-uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
-uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
-uci set dhcp.@dnsmasq[0].dns_redirect='0'
-# noresolv=1: 不读 resolv.conf，否则 wan peerdns 注入的 ISP DNS 会成为额外上游、
-# 绕过旁路 ADGH 过滤(与 bypass/full 一致)
-uci set dhcp.@dnsmasq[0].noresolv='1'
-uci commit dhcp
-
-$LAN_FORWARD_BLK
-
-$UPNP_BLK
-
-# 显式声明旁路 IP,供 dns-hijack 直接读取(取代 dhcp 反查,避免主路由模式 DNS 环路)
-uci -q delete dns_hijack.settings
-uci set dns_hijack.settings=settings
-uci set dns_hijack.settings.bypass_ip='$BYPASS_IP'
-[ -n '$BYPASS_IP6' ] && uci set dns_hijack.settings.bypass_ip6='$BYPASS_IP6'
-uci commit dns_hijack
-$DNS_HIJACK_BLK
-EOT
     fi
 
     # fwx 应用过滤(DPI 内核模块)依赖 conntrack，与流卸载冲突会导致连接不稳/应用过滤失效，故开启 fwx 时关闭流卸载
