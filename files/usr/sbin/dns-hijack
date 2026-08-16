@@ -26,15 +26,13 @@ if [ -n "$BYPASS_IP" ]; then
         nft add rule inet dns_hijack prerouting ip6 saddr != $BYPASS_IP6 tcp dport 53 redirect to :53
     else
         # 未配置 IPv6 旁路地址,全量劫持 IPv6 DNS 到 ADGH(:53)
-        nft add rule inet dns_hijack prerouting ip6 udp dport 53 redirect to :53
-        nft add rule inet dns_hijack prerouting ip6 tcp dport 53 redirect to :53
+        nft add rule inet dns_hijack prerouting meta nfproto ipv6 udp dport 53 redirect to :53
+        nft add rule inet dns_hijack prerouting meta nfproto ipv6 tcp dport 53 redirect to :53
     fi
     logger -t dns-hijack "nftables DNS hijack applied (bypass: ${BYPASS_IP}${BYPASS_IP6:+ / $BYPASS_IP6})"
 else
     # 完整路由模式：无旁路 IP，全部劫持到本地 ADGH(53)
     nft add rule inet dns_hijack prerouting udp dport 53 redirect to :53
     nft add rule inet dns_hijack prerouting tcp dport 53 redirect to :53
-    nft add rule inet dns_hijack prerouting ip6 udp dport 53 redirect to :53
-    nft add rule inet dns_hijack prerouting ip6 tcp dport 53 redirect to :53
     logger -t dns-hijack "nftables DNS hijack applied (full router, no bypass)"
 fi
