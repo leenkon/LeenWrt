@@ -1,23 +1,14 @@
 --- a/src/fwx_main.c
 +++ b/src/fwx_main.c
-@@ -1162,6 +1162,9 @@
- 	unsigned char *msg_buf = NULL;
- 	unsigned int consumed = 0;
- 
-+	if (!skb || len == 0 || from >= skb->len || len > skb->len - from)
-+		return NULL;
-+
- 	msg_buf = kmalloc(len, GFP_KERNEL);
- 	if (!msg_buf)
- 		return NULL;
-@@ -1220,18 +1223,49 @@
+@@ -1220,18 +1220,50 @@
  		return -1;
  	}
  
-+	/* Bind the L4 payload to the real skb tail so a malformed packet
-+	 * (forged iph->tot_len / tcph->doff / udph->len) cannot make the DPI
-+	 * parsers read past the skb and oops the kernel (was fwx_match_feature
-+	 * -> af_is_flow_host_ip_literal memcpy from an OOB url_pos/host_pos). */
++	/* Clamp the L4 payload window to the real skb tail. The header fields used
++	 * above (iph->tot_len / ip6h->payload_len) are sender-controlled and may
++	 * disagree with the actual skb; derive the bound from the skb itself.
++	 * Without this, l4_len / l4_data can point past the skb and read_skb()'s
++	 * kmalloc(len) memcpy trips FORTIFY and panics the kernel. */
 +	{
 +		unsigned char *tail = skb_tail_pointer(skb);
 +		int avail;
@@ -61,21 +52,3 @@
  		flow->l4_data = ipp + 8;
  		flow->dport = ntohs(udph->dest);
  		flow->sport = ntohs(udph->source);
-@@ -1279,7 +1313,7 @@
- 	if (!((p[0] == 0x16 && p[1] == 0x03 && p[5] == 0x01) || flow->client_hello))
- 		return -1;
- 
--	for (i = 0; i < data_len; i++)
-+	for (i = 0; i + 3 < data_len; i++)
- 	{
- 		if (i + HTTPS_URL_OFFSET >= data_len)
- 		{
-@@ -1341,7 +1375,7 @@
- 		return;
- 	}
- 
--	for (i = 0; i < data_len; i++)
-+	for (i = 0; i + 3 < data_len; i++)
- 	{
- 		if (data[i] == 0x0d && data[i + 1] == 0x0a)
- 		{

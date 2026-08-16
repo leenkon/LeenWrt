@@ -130,21 +130,6 @@ before)
         fi
     fi
 
-    # 启用内核 pstore/ramoops（崩溃日志掉电持久化：用于区分"硬重启"与"真断流"；
-    # 纯内核配置片段，非源码补丁——immortalWrt 25.12.1 未在 Config-kernel.in 暴露这些符号）
-    _pstore_frag="$PROJECT_ROOT/configs/kernel-6.12-pstore.fragment"
-    if [ -f "$_pstore_frag" ]; then
-        _gen_cfg="target/linux/generic/config-6.12"
-        if [ -f "$_gen_cfg" ]; then
-            while read -r _l; do
-                [ -z "$_l" ] && continue
-                grep -qxF "$_l" "$_gen_cfg" 2>/dev/null && continue
-                echo "$_l" >> "$_gen_cfg"
-            done < "$_pstore_frag"
-            echo "[diy] enabled pstore/ramoops in $_gen_cfg"
-        fi
-    fi
-
     # 覆盖 fanchmwrt 主题硬编码标题为 LuCI 动态标题（主题由 build.sh 3.6 拉取）
     _THEME_HEADER="$PROJECT_ROOT/feeds/fwx/luci-theme-fanchmwrt/ucode/template/themes/fanchmwrt/header.ut"
     if [ -f "$_THEME_HEADER" ]; then
@@ -472,11 +457,6 @@ uci add_list system.ntp.server='ntp.aliyun.com'
 uci add_list system.ntp.server='cn.pool.ntp.org'
 uci commit system
 
-# 系统日志持久化：logd 默认只存 RAM 环形缓冲，重启即失（无法回看 oops 前日志）。
-# log_file 落盘到 /root（重启保留，按 log_size KiB 滚动为 syslog.log + .old）；log_buffer_size 单独调大 RAM 缓冲供网页实时查看。
-uci set system.@system[0].log_file='/root/syslog.log'
-uci set system.@system[0].log_size='512'
-uci set system.@system[0].log_buffer_size='256'
 $REMOTE_SYSLOG_BLK
 uci commit system
 /etc/init.d/log restart
