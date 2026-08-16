@@ -235,7 +235,7 @@ fi
 # leenwrt：直接套用本地 .config 种子（configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config）
 cp "$SCRIPT_DIR/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在: configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config"
 sed -i 's/\r$//' .config
-# fwx 应用过滤（可选）：包清单见 feeds/fwx/fwx-packages.list
+# 勾选 fwx 时把应用过滤栈追加进 .config（清单单一来源：feeds/fwx/fwx-packages.list）
 if [[ "$WITH_FWX" = "true" ]]; then
   FWX_LIST="$SCRIPT_DIR/feeds/fwx/fwx-packages.list"
   if [[ -f "$FWX_LIST" ]]; then
