@@ -79,9 +79,15 @@ WITH_OC="false"; WITH_ADGH="false"
 [[ "$RUN_TYPE" == "bypass" || ("$RUN_TYPE" == "full" && "$NO_ADGH" != "true") ]] && WITH_ADGH=true
 
 # fwx 应用过滤（可选，默认开启）：包清单见 feeds/fwx/fwx-packages.list
+# 旁路由不安装 fwx：应用过滤在主路由/完整路由生效；且旁路由无 fwx 自定义页面，故可安全启用 argon 主题
 WITH_FWX="true"
-read -p "包含 fwx 应用过滤? [Y/n]: " fwx; [[ "$fwx" =~ ^[Nn]$ ]] && WITH_FWX="false"
-[ "$WITH_FWX" = "true" ] && success "将包含 fwx 应用过滤"
+if [[ "$RUN_TYPE" == "bypass" ]]; then
+  WITH_FWX="false"
+  echo "[build] 旁路由不安装 fwx（应用过滤在主路由/完整路由生效）"
+else
+  read -p "包含 fwx 应用过滤? [Y/n]: " fwx; [[ "$fwx" =~ ^[Nn]$ ]] && WITH_FWX="false"
+  [ "$WITH_FWX" = "true" ] && success "将包含 fwx 应用过滤"
+fi
 
 # 旁路 IP (主路由，用于 DNS 劫持排除规则和 DHCP DNS 选项)
 BYPASS_IP=""
