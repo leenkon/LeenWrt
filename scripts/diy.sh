@@ -422,6 +422,9 @@ uci add_list dhcp.@dnsmasq[0].server='$BYPASS_IP'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
+# noresolv=1: 不读 resolv.conf，否则 wan peerdns 注入的 ISP DNS 会成为额外上游、
+# 绕过旁路 ADGH 过滤(与 bypass/full 一致)
+uci set dhcp.@dnsmasq[0].noresolv='1'
 uci commit dhcp
 
 $LAN_FORWARD_BLK

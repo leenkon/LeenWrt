@@ -47,8 +47,8 @@ read_skb(skb, flow.l4_data - skb->data, flow.l4_len); // kmalloc(flow.l4_len)
 ## 修复（精简：单 hunk，根因修复）
 
 只对 `parse_flow_proto` 一处下手：把 `ipp_len` 钳到真实 skb 尾，并校验 TCP `doff` 与
-UDP 长度。其余守卫（`read_skb` 入口检查、http(s) 循环 `i+3<data_len`）在此之后全部冗余，
-已删除以求简洁——它们要防的越界在本 hunk 里已不可能发生。
+UDP 长度。本 hunk 之后，`read_skb`、`dpi_*` 循环、`af_is_flow_host_ip_literal` 的越界
+已不可能发生，故下游这些函数无需改动；本补丁也未删除任何既有代码，只新增钳制逻辑。
 
 ```diff
 --- a/package/fcm/fwx/src/fwx_main.c
