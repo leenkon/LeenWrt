@@ -73,10 +73,6 @@ PROJECT_ROOT=$(cd "$SCRIPT_DIR/.." && pwd -P)
 case "$PHASE" in
 before)
     echo "[diy] before: $VERSION"
-    # ########################################################################
-    # 重要CI提醒：必须先执行 ./scripts/feeds update -a，再调用本脚本before
-    # 如果先diy打补丁再feeds update，fwx源码补丁会被覆盖丢失！
-    # ########################################################################
     if [ -n "$FEEDS_SRC" ]; then
         FEED_CONF_SRC="$FEEDS_SRC"
     else
@@ -127,14 +123,6 @@ before)
         fi
     fi
 
-    # ruby 的 YJIT 会拉起 rust/host（其 LLVM 在 25.12 已 404）；解耦后走 --disable-yjit，OC 的 ruby -ryaml 仍正常
-    _RUBY_DIR="$PROJECT_ROOT/feeds/packages/lang/ruby"
-    if [ -d "$_RUBY_DIR" ]; then
-        sed -i 's/^PKG_BUILD_DEPENDS:=ruby\/host RUBY_ENABLE_YJIT:rust\/host/PKG_BUILD_DEPENDS:=ruby\/host/' "$_RUBY_DIR/Makefile"
-        sed -i '/default y if x86_64/d' "$_RUBY_DIR/Config.in"
-        echo "[diy] 已解耦 ruby YJIT 与 rust/host（避免 rustc 1.94.0 LLVM 下载 404）"
-    fi
-
     # fanchmwrt主题：替换硬编码title为LuCI动态标题
     _THEME_HEADER="$PROJECT_ROOT/feeds/fwx/luci-theme-fanchmwrt/ucode/template/themes/fanchmwrt/header.ut"
     if [ -f "$_THEME_HEADER" ] && command -v python3 >/dev/null 2>&1; then
@@ -169,6 +157,18 @@ else:
     print("[diy] footer.ut 未变化，跳过")
 PY
     fi
+    ;;
+
+ruby)
+    # 必须在 ./scripts/feeds update -a 之后调用：feeds/packages 此时才被拉取到本地。
+    # ruby 的 YJIT 默认开启会拉起 rust/host，其预编译 LLVM 在 25.12 上游已 404；
+    # 解耦后 ruby 走 --disable-yjit，OpenClash 运行期 ruby -ryaml 校验不受影响。
+    echo "[diy] ruby: 解耦 YJIT 与 rust/host"
+    _RUBY_DIR="$PROJECT_ROOT/feeds/packages/lang/ruby"
+    [ -d "$_RUBY_DIR" ] || error_exit "缺失 ruby 源码目录（请确认已执行 feeds update -a）: $_RUBY_DIR"
+    sed -i 's/^PKG_BUILD_DEPENDS:=ruby\/host RUBY_ENABLE_YJIT:rust\/host/PKG_BUILD_DEPENDS:=ruby\/host/' "$_RUBY_DIR/Makefile"
+    sed -i '/default y if x86_64/d' "$_RUBY_DIR/Config.in"
+    echo "[diy] 已解耦 ruby YJIT 与 rust/host（避免 rustc 1.94.0 LLVM 下载 404）"
     ;;
 
 after)
@@ -472,7 +472,7 @@ EOT
         chmod 600 "$SHADOW" 2>/dev/null || true
     fi
     ;;
-*) error_exit "PHASE仅支持 before / after" ;;
+*) error_exit "PHASE仅支持 before / ruby / after" ;;
 esac
 
 echo "[diy] done: $PHASE ${PROFILE_TYPE:-N/A}"

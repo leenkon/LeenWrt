@@ -213,6 +213,8 @@ echo -e "\n${YELLOW}[4/7] 准备配置...${NC}"
 cd "$OPENWRT_DIR"
 "$DIY" -v "$MAIN_VER" -p before -t "$RUN_TYPE" --feeds "$FEEDS_FILE_ABS" ${FWX_FLAG}
 ./scripts/feeds update -a
+# feeds update 之后才能解耦 ruby YJIT（feeds/packages 此时才拉到本地；before 阶段目录尚不存在）
+"$DIY" -v "$MAIN_VER" -p ruby
 
 # OpenClash LuCI 替换（仅 Mini 旁路由 / Full 勾选 OC 时）
 if [[ "$WITH_OC" == "true" ]]; then

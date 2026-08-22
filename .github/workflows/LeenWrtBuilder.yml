@@ -114,6 +114,8 @@ jobs:
           chmod +x $GITHUB_WORKSPACE/scripts/diy.sh
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p before -t $RUN_TYPE --feeds "$FEEDS_FILE_ABS" $FWX_FLAG
           ./scripts/feeds update -a
+          # feeds update 之后才能解耦 ruby YJIT（feeds/packages 此时才拉到本地）
+          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p ruby
 
           if $WITH_OC; then
             [ -f "$GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh" ] && {

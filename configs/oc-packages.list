@@ -1,10 +1,9 @@
 # OpenClash 代理服务（勾选时由 build.sh 注入 .config；luci-compat 供旧模板）
+# ruby / ruby-yaml 由 luci-app-openclash Makefile 硬依赖拉取，无需在此列出
 luci-app-openclash
 clash-meta
 kmod-tun
 libcap
 libcap-bin
-ruby
-ruby-yaml
 unzip
 luci-compat
