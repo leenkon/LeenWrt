@@ -165,15 +165,6 @@ jobs:
             else echo "[build] 警告: 未找到 $ADGH_LIST，跳过 ADGH 注入"; fi
           fi
 
-          # OpenClash 的 ruby 依赖默认开启 YJIT，会拉起 rust/host 工具链；
-          # immortalwrt 25.12 的 rustc 1.94.0 预编译 LLVM 已从 CI artifact 仓库清理(404)，导致 CI 构建失败。
-          # 显式关闭 ruby YJIT 即可跳过整个 rust 工具链（路由器上 ruby 仅偶发解析 YAML，YJIT 无收益）。
-          if $WITH_OC && grep -q "^CONFIG_PACKAGE_ruby=y" .config; then
-            sed -i '/^CONFIG_RUBY_ENABLE_YJIT=/d' .config
-            echo "# CONFIG_RUBY_ENABLE_YJIT is not set" >> .config
-            echo "[build] 已关闭 ruby YJIT（避免拉起 rust/host 工具链，修复 CI rustc LLVM 下载 404）"
-          fi
-
           # 修复BUG：不要默认赋值password，用户留空就传空字符串
           ROOTPWD="${{ github.event.inputs.root_password }}"
           CIP="${{ github.event.inputs.custom_ip }}"; CGW="${{ github.event.inputs.custom_gateway }}"

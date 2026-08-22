@@ -280,17 +280,6 @@ _inject_pkg_list() {
 [ "$WITH_OC" = "true" ] && _inject_pkg_list "$SCRIPT_DIR/configs/oc-packages.list" "OpenClash 选装包"
 [ "$WITH_ADGH" = "true" ] && _inject_pkg_list "$SCRIPT_DIR/configs/adgh-packages.list" "AdGuardHome 选装包"
 
-# OpenClash 的 ruby 依赖（解析 YAML）默认开启 YJIT，会拉起 rust/host 工具链；
-# immortalwrt 25.12 的 rustc 1.94.0 预编译 LLVM 已从 CI artifact 仓库清理(404)，导致 CI 构建失败。
-# 路由器上的 ruby 仅偶发解析 YAML，YJIT 无收益，显式关闭即可跳过整个 rust 工具链。
-if [[ "$WITH_OC" = "true" ]]; then
-  if grep -q "^CONFIG_PACKAGE_ruby=y" .config; then
-    sed -i '/^CONFIG_RUBY_ENABLE_YJIT=/d' .config
-    echo "# CONFIG_RUBY_ENABLE_YJIT is not set" >> .config
-    echo "[build] 已关闭 ruby YJIT（避免拉起 rust/host 工具链，修复 CI rustc LLVM 下载 404）"
-  fi
-fi
-
 success "完成"
 
 # 5. 网络配置
