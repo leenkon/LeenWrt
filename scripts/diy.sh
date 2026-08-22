@@ -127,21 +127,12 @@ before)
         fi
     fi
 
-    # ruby（OpenClash 依赖 ruby -ryaml 解析订阅）默认开启 YJIT，而 YJIT 在 x86_64 上
-    # 会把 rust/host 拉进构建依赖；immortalwrt 25.12 的 rustc 1.94.0 预编译 LLVM 已从
-    # rust CI artifact 仓库清理(404)，导致整条 rust 工具链编译失败、固件编不出。
-    # 解耦：去掉 YJIT 的 default y（kconfig 的 default 会覆盖 .config 里的 not-set），
-    # 并把 YJIT 从 Makefile 的 rust/host 依赖摘掉——路由器上 ruby 仅偶发解析 YAML，
-    # 走 --disable-yjit 完全够用，且不再需要 rust 工具链。
-    _RUBY_MK="$PROJECT_ROOT/feeds/packages/lang/ruby/Makefile"
-    _RUBY_CFG="$PROJECT_ROOT/feeds/packages/lang/ruby/Config.in"
-    if [ -f "$_RUBY_MK" ]; then
-        sed -i 's/^PKG_BUILD_DEPENDS:=ruby\/host RUBY_ENABLE_YJIT:rust\/host/PKG_BUILD_DEPENDS:=ruby\/host/' "$_RUBY_MK"
-        echo "[diy] 已解耦 ruby YJIT 与 rust/host 依赖（避免 rustc 1.94.0 LLVM 下载 404）"
-    fi
-    if [ -f "$_RUBY_CFG" ]; then
-        sed -i '/default y if x86_64/d' "$_RUBY_CFG"
-        echo "[diy] 已删除 ruby YJIT 的 default y（防止 make defconfig 翻回 =y）"
+    # ruby 的 YJIT 会拉起 rust/host（其 LLVM 在 25.12 已 404）；解耦后走 --disable-yjit，OC 的 ruby -ryaml 仍正常
+    _RUBY_DIR="$PROJECT_ROOT/feeds/packages/lang/ruby"
+    if [ -d "$_RUBY_DIR" ]; then
+        sed -i 's/^PKG_BUILD_DEPENDS:=ruby\/host RUBY_ENABLE_YJIT:rust\/host/PKG_BUILD_DEPENDS:=ruby\/host/' "$_RUBY_DIR/Makefile"
+        sed -i '/default y if x86_64/d' "$_RUBY_DIR/Config.in"
+        echo "[diy] 已解耦 ruby YJIT 与 rust/host（避免 rustc 1.94.0 LLVM 下载 404）"
     fi
 
     # fanchmwrt主题：替换硬编码title为LuCI动态标题
