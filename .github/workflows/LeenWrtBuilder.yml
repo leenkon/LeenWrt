@@ -71,12 +71,34 @@ jobs:
             -exec sed -i 's/\r$//' {} + 2>/dev/null || true
           cd openwrt
 
-          case "${{ github.event.inputs.profile }}" in
-            Full) CFG_PREFIX=full; RUN_TYPE=full;;
-            Mini) CFG_PREFIX=mini; RUN_TYPE=bypass;;
-            *) echo "未知 profile: ${{ github.event.inputs.profile }}"; exit 1;;
-          esac
           MAIN_VER="${{ github.event.inputs.version }}"; MAIN_VER="${MAIN_VER%.*}"
+          # ============ 修复：映射真实配置文件 25.12‑full / 25.12‑mini ============
+          case "${{ github.event.inputs.profile }}" in
+            Full)
+              RUN_TYPE=full
+              SRC_CONFIG="$GITHUB_WORKSPACE/configs/${MAIN_VER}-full"
+              ;;
+            Mini)
+              RUN_TYPE=bypass
+              SRC_CONFIG="$GITHUB_WORKSPACE/configs/${MAIN_VER}-mini"
+              ;;
+            *)
+              echo "未知 profile: ${{ github.event.inputs.profile }}"
+              exit 1
+              ;;
+          esac
+
+          echo ">> 选定profile=${{ github.event.inputs.profile }} RUN_TYPE=${RUN_TYPE} 使用配置文件: ${SRC_CONFIG}"
+          ls -la "$GITHUB_WORKSPACE/configs/" || echo "WARN: configs目录不存在"
+          if [ ! -f "${SRC_CONFIG}" ]; then
+            echo "ERROR: 配置文件不存在 ${SRC_CONFIG}"
+            ls -la "$GITHUB_WORKSPACE/configs/"
+            exit 1
+          fi
+          # 复制真实配置到 .config
+          cp -f "${SRC_CONFIG}" .config
+          sed -i 's/\r$//' .config
+          # =====================================================================
 
           WITH_OC=${{ github.event.inputs.with_oc }}
           WITH_ADGH=${{ github.event.inputs.with_adgh }}
@@ -111,8 +133,6 @@ jobs:
           fi
 
           ./scripts/feeds install -a -f
-          cp $GITHUB_WORKSPACE/configs/${CFG_PREFIX}.config .config
-          sed -i 's/\r$//' .config
 
           if $WITH_FWX; then
             FWX_LIST="$GITHUB_WORKSPACE/feeds/fwx/fwx-packages.list"
