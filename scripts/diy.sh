@@ -169,7 +169,8 @@ ruby)
     _RUBY_DIR="$_SRC/feeds/packages/lang/ruby"
     [ -d "$_RUBY_DIR" ] || error_exit "缺失 ruby 源码目录（请确认已执行 feeds update -a 且 --src-dir 指向 OpenWrt 源码目录）: $_RUBY_DIR"
     sed -i 's/^PKG_BUILD_DEPENDS:=ruby\/host RUBY_ENABLE_YJIT:rust\/host/PKG_BUILD_DEPENDS:=ruby\/host/' "$_RUBY_DIR/Makefile"
-    sed -i '/default y if x86_64/d' "$_RUBY_DIR/Config.in"
+    # 25.12 的 RUBY_ENABLE_YJIT kconfig 内联在 Makefile（无独立 Config.in），删默认 y 使 YJIT 默认关闭
+    sed -i '/default y if x86_64||aarch64/d' "$_RUBY_DIR/Makefile"
     echo "[diy] 已解耦 ruby YJIT 与 rust/host（避免 rustc 1.94.0 LLVM 下载 404）"
     ;;
 
