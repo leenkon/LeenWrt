@@ -21,6 +21,8 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
+    outputs:
+      timestamp: ${{ steps.build.outputs.timestamp }}
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
@@ -43,8 +45,8 @@ jobs:
         if: ${{ github.event.inputs.with_fwx == 'true' }}
         run: |
           set -e
+          [ -f "$GITHUB_WORKSPACE/scripts/sync-fwx.sh" ] || { echo "sync-fwx.sh 缺失"; exit 1; }
           chmod +x $GITHUB_WORKSPACE/scripts/sync-fwx.sh
-          # 拉取 kmod-fwx 到 feeds/fwx/fwx（构建产物，已被 .gitignore 忽略），并刷新 950 内核补丁与 FWX_COMMIT 钉点
           $GITHUB_WORKSPACE/scripts/sync-fwx.sh
           echo "[ci] fwx 核心已同步（FWX_COMMIT 见 cores/leenwrt.conf）"
 
@@ -54,7 +56,6 @@ jobs:
           source $GITHUB_WORKSPACE/cores/leenwrt.conf
           SRC_REF="${REF_PREFIX}${{ github.event.inputs.version }}"
           rm -rf openwrt
-          # 直接按 SRC_REF（tag）克隆检出，避免浅克隆 fetch 后无本地 ref 致 checkout 失败
           timeout 180 git clone --depth 1 --single-branch --branch "$SRC_REF" "$REPO_URL" openwrt
 
       - name: 配置与编译
@@ -64,10 +65,12 @@ jobs:
           source $GITHUB_WORKSPACE/cores/leenwrt.conf
           FEEDS_FILE_ABS="$GITHUB_WORKSPACE/$FEEDS_FILE"
           FILES_DIR_ABS="$GITHUB_WORKSPACE/$FILES_DIR"
-          # 修复 Windows 提交可能带来的 CRLF（路由器 ash 不兼容），覆盖脚本/YAML/init.d
-          find $GITHUB_WORKSPACE -type f \( -name "*.sh" -o -name "*.yaml" -o -name "dns-hijack" -o -name "99-adgh-filters" -o -path "*/init.d/*" \) \
+
+          # 修复Windows CRLF换行，增加conf
+          find $GITHUB_WORKSPACE -type f \( -name "*.sh" -o -name "*.yaml" -o -name "*.conf" -o -name "dns-hijack" -o -name "99-adgh-filters" -o -path "*/init.d/*" \) \
             -exec sed -i 's/\r$//' {} + 2>/dev/null || true
           cd openwrt
+
           case "${{ github.event.inputs.profile }}" in
             Full) CFG_PREFIX=full; RUN_TYPE=full;;
             Mini) CFG_PREFIX=mini; RUN_TYPE=bypass;;
@@ -75,14 +78,14 @@ jobs:
           esac
           MAIN_VER="${{ github.event.inputs.version }}"; MAIN_VER="${MAIN_VER%.*}"
 
-          # OC/ADGH：旁路由(Mini)固定启用；完整路由(Full)由 Workflow 勾选决定
           WITH_OC=${{ github.event.inputs.with_oc }}
           WITH_ADGH=${{ github.event.inputs.with_adgh }}
           [[ "$RUN_TYPE" == "bypass" ]] && { WITH_OC=true; WITH_ADGH=true; }
           NO_ADGH="false"; [ "$WITH_ADGH" = "true" ] || NO_ADGH="true"
+          # Mini旁路由强制关闭--no-adgh，保证ADGH必开
+          [[ "$RUN_TYPE" == "bypass" ]] && NO_ADGH="false"
 
           WITH_FWX=${{ github.event.inputs.with_fwx }}
-          # 显式门控：避免 ${WITH_FWX:+"--with-fwx"} 在 WITH_FWX="false" 时（非空串）误展开成 --with-fwx
           FWX_FLAG=""; [ "$WITH_FWX" = "true" ] && FWX_FLAG="--with-fwx"
           OC_FLAG="";  [ "$WITH_OC"  = "true" ] && OC_FLAG="--with-oc"
 
@@ -91,11 +94,12 @@ jobs:
           ./scripts/feeds update -a
 
           if $WITH_OC; then
-            chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh
-            $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh .
+            [ -f "$GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh" ] && {
+              chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh
+              $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh .
+            } || echo "[warn] upgrade-openclash-luci.sh 不存在，跳过"
           fi
 
-          # AdGuardHome LuCI 壳去除对引擎包(adguardhome)的硬依赖（leenwrt 25.12；引擎走二进制注入）
           if [ "$MAIN_VER" = "25.12" ]; then
             ADGH_LUCI_MK="feeds/luci/applications/luci-app-adguardhome/Makefile"
             if [ -f "$ADGH_LUCI_MK" ]; then
@@ -107,16 +111,15 @@ jobs:
           fi
 
           ./scripts/feeds install -a -f
-          cp $GITHUB_WORKSPACE/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config .config
+          cp $GITHUB_WORKSPACE/configs/${CFG_PREFIX}.config .config
           sed -i 's/\r$//' .config
 
-          # fwx 应用过滤（可选）：kmod-fwx 由 sync-fwx.sh 在构建前按 FWX_COMMIT 动态拉取 + 15 luci-app-fwx-* via src-git fwxluci（fwxd/libfwx_common 仍 vendored）
           if $WITH_FWX; then
             FWX_LIST="$GITHUB_WORKSPACE/feeds/fwx/fwx-packages.list"
             if [ -f "$FWX_LIST" ]; then
               {
                 echo ""
-                echo "# ===== fwx 应用过滤栈（kmod-fwx 构建期按 FWX_COMMIT 动态拉取 + 15 luci-app-fwx-* via src-git fwxluci；fwxd/libfwx_common vendored）====="
+                echo "# ===== fwx 应用过滤栈（kmod-fwx 构建期按 FWX_COMMIT 动态拉取 + 15 luci-app-fwx-* via src-git fwxluci；fwxd/libfwx_common 仍 vendored）====="
                 while read -r pkg; do
                   [ -n "$pkg" ] && [ "${pkg#\#}" = "$pkg" ] && echo "CONFIG_PACKAGE_${pkg}=y"
                 done < "$FWX_LIST"
@@ -127,7 +130,6 @@ jobs:
             fi
           fi
 
-          # OpenClash / AdGuardHome 选装包（勾选时注入，复用 fwx 包清单模式；清单单一来源 configs/{oc,adgh}-packages.list）
           if $WITH_OC; then
             OC_LIST="$GITHUB_WORKSPACE/configs/oc-packages.list"
             if [ -f "$OC_LIST" ]; then
@@ -143,30 +145,38 @@ jobs:
             else echo "[build] 警告: 未找到 $ADGH_LIST，跳过 ADGH 注入"; fi
           fi
 
-          ROOTPWD="${{ github.event.inputs.root_password }}"; ROOTPWD="${ROOTPWD:-password}"
+          # 修复BUG：不要默认赋值password，用户留空就传空字符串
+          ROOTPWD="${{ github.event.inputs.root_password }}"
           CIP="${{ github.event.inputs.custom_ip }}"; CGW="${{ github.event.inputs.custom_gateway }}"
           PUSER="${{ github.event.inputs.pppoe_username }}"; PPASS="${{ github.event.inputs.pppoe_password }}"
           NOADGH_ARG=""
           [ "$NO_ADGH" = "true" ] && NOADGH_ARG="--no-adgh"
+
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE --files-dir "$FILES_DIR_ABS" \
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             ${NOADGH_ARG:+"$NOADGH_ARG"} \
             $FWX_FLAG $OC_FLAG \
-            --root-pass "$ROOTPWD"
+            ${ROOTPWD:+--root-pass "$ROOTPWD"}
 
-          $WITH_OC && { chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh; $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh $GITHUB_WORKSPACE --files-dir "$FILES_DIR_ABS"; } || true
-          if $WITH_ADGH; then
-            chmod +x $GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh
-            $GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh $GITHUB_WORKSPACE --files-dir "$FILES_DIR_ABS"
+          if $WITH_OC; then
+            [ -f "$GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh" ] && {
+              chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh
+              $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh $GITHUB_WORKSPACE --files-dir "$FILES_DIR_ABS"
+            } || echo "[warn] upgrade-openclash-core.sh 不存在，跳过"
           fi
+          if $WITH_ADGH; then
+            [ -f "$GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh" ] && {
+              chmod +x $GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh
+              $GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh $GITHUB_WORKSPACE --files-dir "$FILES_DIR_ABS"
+            } || echo "[warn] upgrade-adgh-binary.sh 不存在，跳过"
+          fi
+
           [[ -d "$FILES_DIR_ABS" ]] && { rm -rf files; cp -rf "$FILES_DIR_ABS" files; } || true
 
-          # 离线 .apk：拷入镜像首启安装目录（由 firstboot-pkgs 用 --allow-untrusted 安装）
           mkdir -p files/etc/firstboot-pkgs/apps
           cp -f $GITHUB_WORKSPACE/apps/*.apk files/etc/firstboot-pkgs/apps/ 2>/dev/null || true
 
-          # 按勾选删除不需要的静态文件（对齐 build.sh）
           case "$RUN_TYPE" in
             bypass) rm -f files/usr/sbin/dns-hijack;;
             full)
@@ -181,28 +191,42 @@ jobs:
               ;;
           esac
           find files/ -type f \( -path "*/sbin/*" -o -path "*/init.d/*" -o -path "*/hotplug.d/*" -o -path "*/uci-defaults/*" -o -name "*.sh" \) -exec chmod 755 {} + 2>/dev/null || true
-          make defconfig && make download && make clean
-          make -j$(nproc) || make -j1 V=s
+          make clean && make defconfig && make download
+          set +e
+          make -j$(nproc)
+          BUILD_RET=$?
+          if [ $BUILD_RET -ne 0 ]; then
+              echo "并行编译失败，切换单线程 V=s"
+              make -j1 V=s
+              BUILD_RET=$?
+          fi
+          set -e
+          if [ $BUILD_RET -ne 0 ]; then
+              echo ">>> 编译失败，退出"
+              exit $BUILD_RET
+          fi
+
           TS=$(date +%Y%m%d%H%M%S)
           echo "timestamp=$TS" >> $GITHUB_OUTPUT
           shopt -s nullglob; for f in bin/targets/x86/64/*combined.img.gz; do mv "$f" "${f%.img.gz}-$TS.img.gz"; done; shopt -u nullglob
 
-      - name: 上传固件
+      - name: 上传固件 Release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           name: leenwrt ${{ github.event.inputs.version }} (${{ github.event.inputs.profile }})
           tag_name: leenwrt-${{ github.event.inputs.version }}-${{ github.event.inputs.profile }}
           files: openwrt/bin/targets/x86/64/*-${{ steps.build.outputs.timestamp }}.img.gz
+          fail_on_error: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 记录 fwx 钉点(若有更新)
-        if: ${{ github.event.inputs.with_fwx == 'true' }}
+        if: ${{ github.event.inputs.with_fwx == 'true' && success() }}
         run: |
           set -e
           git -C $GITHUB_WORKSPACE config user.name "github-actions[bot]"
           git -C $GITHUB_WORKSPACE config user.email "github-actions[bot]@users.noreply.github.com"
-          # 仅记录钉点相关文件（feeds/fwx/fwx 被 .gitignore 忽略，不入仓）
           git -C $GITHUB_WORKSPACE add cores/leenwrt.conf feeds/fwx/README.md patches/fwx/
           if ! git -C $GITHUB_WORKSPACE diff --cached --quiet; then
             SHA=$(grep -m1 '^FWX_COMMIT=' $GITHUB_WORKSPACE/cores/leenwrt.conf | cut -d= -f2 | tr -d '"')
