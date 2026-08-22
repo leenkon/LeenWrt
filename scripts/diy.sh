@@ -26,6 +26,7 @@ DNS_BACKUP="223.6.6.6"
 VERSION="" PHASE="" PROFILE_TYPE="" FEEDS_SRC="" FILES_DIR_NAME="files"
 NO_ADGH=0 WITH_FWX=0 WITH_OC=0
 CUSTOM_IP="" CUSTOM_GATEWAY="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD="" LOG_SERVER=""
+SRC_DIR=""  # OpenWrt 源码顶层目录（feeds update 拉取的 packages/luci 在其 feeds/ 子目录下）
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -43,6 +44,7 @@ while [ $# -gt 0 ]; do
         --log-server) LOG_SERVER="$2"; shift 2 ;;
         --feeds)     FEEDS_SRC="$2"; shift 2 ;;
         --files-dir) FILES_DIR_NAME="$2"; shift 2 ;;
+        --src-dir)   SRC_DIR="$2"; shift 2 ;;
         *) error_exit "未知参数 $1" ;;
     esac
 done
@@ -160,12 +162,14 @@ PY
     ;;
 
 ruby)
-    # 必须在 ./scripts/feeds update -a 之后调用：feeds/packages 此时才被拉取到本地。
+    # 必须在 ./scripts/feeds update -a 之后调用：packages 是 src-git，拉取到 OpenWrt 源码目录的 feeds/ 下，
+    # 而非仓库根的 feeds/（仓库根 feeds/ 仅含 src-link 的 fwx）。故用 --src-dir 指定的源码顶层目录定位。
     # ruby 的 YJIT 默认开启会拉起 rust/host，其预编译 LLVM 在 25.12 上游已 404；
     # 解耦后 ruby 走 --disable-yjit，OpenClash 运行期 ruby -ryaml 校验不受影响。
     echo "[diy] ruby: 解耦 YJIT 与 rust/host"
-    _RUBY_DIR="$PROJECT_ROOT/feeds/packages/lang/ruby"
-    [ -d "$_RUBY_DIR" ] || error_exit "缺失 ruby 源码目录（请确认已执行 feeds update -a）: $_RUBY_DIR"
+    _SRC="${SRC_DIR:-$PROJECT_ROOT/openwrt}"
+    _RUBY_DIR="$_SRC/feeds/packages/lang/ruby"
+    [ -d "$_RUBY_DIR" ] || error_exit "缺失 ruby 源码目录（请确认已执行 feeds update -a 且 --src-dir 指向 OpenWrt 源码目录）: $_RUBY_DIR"
     sed -i 's/^PKG_BUILD_DEPENDS:=ruby\/host RUBY_ENABLE_YJIT:rust\/host/PKG_BUILD_DEPENDS:=ruby\/host/' "$_RUBY_DIR/Makefile"
     sed -i '/default y if x86_64/d' "$_RUBY_DIR/Config.in"
     echo "[diy] 已解耦 ruby YJIT 与 rust/host（避免 rustc 1.94.0 LLVM 下载 404）"
