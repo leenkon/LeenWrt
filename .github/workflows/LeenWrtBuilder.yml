@@ -114,7 +114,7 @@ jobs:
           chmod +x $GITHUB_WORKSPACE/scripts/diy.sh
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p before -t $RUN_TYPE --feeds "$FEEDS_FILE_ABS" $FWX_FLAG
           ./scripts/feeds update -a
-          # feeds update 之后才能解耦 ruby YJIT（packages 是 src-git，拉到 openwrt 工作区 feeds/ 下）
+          # feeds update 后才能解耦 ruby YJIT（packages 此时才拉到 openwrt 工作区 feeds/ 下）
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p ruby --src-dir "$GITHUB_WORKSPACE/openwrt"
 
           if $WITH_OC; then
