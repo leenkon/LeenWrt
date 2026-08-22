@@ -72,15 +72,15 @@ jobs:
           cd openwrt
 
           MAIN_VER="${{ github.event.inputs.version }}"; MAIN_VER="${MAIN_VER%.*}"
-          # ============ 修复：映射真实配置文件 25.12‑full / 25.12‑mini ============
+          # ============ 配置文件 25.12‑full / 25.12‑mini选择 ============
           case "${{ github.event.inputs.profile }}" in
             Full)
               RUN_TYPE=full
-              SRC_CONFIG="$GITHUB_WORKSPACE/configs/${MAIN_VER}-full"
+              SRC_CONFIG="$GITHUB_WORKSPACE/configs/${MAIN_VER}-full.config"
               ;;
             Mini)
               RUN_TYPE=bypass
-              SRC_CONFIG="$GITHUB_WORKSPACE/configs/${MAIN_VER}-mini"
+              SRC_CONFIG="$GITHUB_WORKSPACE/configs/${MAIN_VER}-mini.config"
               ;;
             *)
               echo "未知 profile: ${{ github.event.inputs.profile }}"
