@@ -100,10 +100,12 @@ before)
         FWX_KMOD_PATCH="$PROJECT_ROOT/patches/fwx/kmod-nf_send_reset-6.12.patch"
         if [ -f "$FWX_KMOD_PATCH" ]; then
             if patch -p1 --dry-run -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_KMOD_PATCH" >/dev/null 2>&1; then
-                patch -p1 --forward -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_KMOD_PATCH"
+                patch -p1 -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_KMOD_PATCH"
                 echo "[diy] applied fwx kmod 6.12 patch -> feeds/fwx/fwx/src/fwx_main.c"
+            elif patch -p1 --reverse --dry-run -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_KMOD_PATCH" >/dev/null 2>&1; then
+                echo "[diy] fwx kmod 6.12 patch 已应用，跳过"
             else
-                echo "[diy] fwx kmod patch 已应用或上下文不符，跳过(详见 $FWX_KMOD_PATCH)"
+                echo "[diy] WARN: fwx kmod 6.12 patch 上下文不符，未应用(详见 $FWX_KMOD_PATCH)" >&2
             fi
         else
             echo "[diy] WARN: 未找到 fwx kmod 补丁 $FWX_KMOD_PATCH (kmod-fwx 可能编译失败)" >&2
@@ -113,10 +115,12 @@ before)
         FWX_CRASH_PATCH="$PROJECT_ROOT/patches/fwx/fwx-match-feature-crash.patch"
         if [ -f "$FWX_CRASH_PATCH" ]; then
             if patch -p1 --dry-run -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_CRASH_PATCH" >/dev/null 2>&1; then
-                patch -p1 --forward -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_CRASH_PATCH"
+                patch -p1 -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_CRASH_PATCH"
                 echo "[diy] applied fwx DPI bounds patch -> feeds/fwx/fwx/src/fwx_main.c"
+            elif patch -p1 --reverse --dry-run -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_CRASH_PATCH" >/dev/null 2>&1; then
+                echo "[diy] fwx DPI bounds patch 已应用，跳过"
             else
-                echo "[diy] fwx DPI bounds patch 已应用或上下文不符，跳过(详见 $FWX_CRASH_PATCH)"
+                echo "[diy] WARN: fwx DPI bounds patch 上下文不符，未应用(详见 $FWX_CRASH_PATCH)" >&2
             fi
         else
             echo "[diy] WARN: 未找到 fwx DPI 边界守卫补丁 $FWX_CRASH_PATCH" >&2
