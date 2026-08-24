@@ -169,8 +169,8 @@ ruby)
     echo "[diy] ruby: 解耦 YJIT 与 rust/host（x86_64/aarch64）"
     RUBY_DIR="$PROJECT_ROOT/openwrt/feeds/packages/lang/ruby"
     if [ -d "$RUBY_DIR" ]; then
-        # Makefile: 去掉 RUBY_ENABLE_YJIT:rust/host 条件依赖，仅保留 ruby/host
-        sed -i -E 's/(PKG_BUILD_DEPENDS:=ruby/host) RUBY_ENABLE_YJIT:rust/host/\1/' "$RUBY_DIR/Makefile"
+        # Makefile: 去掉 RUBY_ENABLE_YJIT:rust/host 条件依赖，仅保留 ruby/host（用 # 作分隔符避路径斜杠）
+        sed -i -E 's#(PKG_BUILD_DEPENDS:=ruby/host) RUBY_ENABLE_YJIT:rust/host#\1#' "$RUBY_DIR/Makefile"
         # Config.in: 删除 x86_64/aarch64 默认开启 YJIT（让 defconfig 不再翻成 =y）
         sed -i -E '/^[[:space:]]*default y if x86_64\|\|aarch64[[:space:]]*$/d' "$RUBY_DIR/Makefile"
         echo "[diy] ruby: 已解耦 YJIT（Makefile 依赖 + Config.in default 均清除）"
