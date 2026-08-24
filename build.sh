@@ -223,6 +223,9 @@ cd "$OPENWRT_DIR"
 "$DIY" -v "$MAIN_VER" -p before -t "$RUN_TYPE" --feeds "$FEEDS_FILE_ABS" ${FWX_FLAG}
 ./scripts/feeds update -a
 
+# 主题 footer 移除（feeds update 后，覆盖 fanchmwrt/argon/bootstrap 三套）
+"$DIY" -v "$MAIN_VER" -p themes -t "$RUN_TYPE"
+
 # ruby YJIT 解耦（分支头 ruby 默认拉 rust/host 致构建失败；仅 WITH_OC 时）
 if [[ "$WITH_OC" == "true" ]]; then
   "$DIY" -v "$MAIN_VER" -p ruby -t "$RUN_TYPE"
@@ -255,7 +258,7 @@ if [[ "$WITH_FWX" = "true" ]]; then
   if [[ -f "$FWX_LIST" ]]; then
     {
       echo ""
-      echo "# ===== fwx 应用过滤栈（kmod-fwx/fwxd/libfwx_common 经 src-link fwx 本地 feed；15 个 luci-app-fwx-* 经 src-git fwxluci）====="
+      echo "# ===== fwx 应用过滤栈（kmod-fwx/fwxd/libfwx_common 经 src-link fwx 本地 feed；14 个 luci-app-fwx-* 经 src-git fwxluci）====="
       while read -r pkg; do
         [[ -n "$pkg" && "$pkg" != \#* ]] && echo "CONFIG_PACKAGE_${pkg}=y"
       done < "$FWX_LIST"

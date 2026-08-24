@@ -128,40 +128,7 @@ before)
         fi
     fi
 
-    # 覆盖 fanchmwrt 主题硬编码标题为 LuCI 动态标题（主题由 build.sh 3.6 拉取）
-    _THEME_HEADER="$PROJECT_ROOT/feeds/fwx/luci-theme-fanchmwrt/ucode/template/themes/fanchmwrt/header.ut"
-    if [ -f "$_THEME_HEADER" ]; then
-        python3 - "$_THEME_HEADER" <<'PY'
-import sys, re
-p = sys.argv[1]
-s = open(p, encoding='utf-8').read()
-new = "<title>{{ striptags(`${boardinfo.hostname ?? '?'}${node ? ` - ${node.title}` : ''}`) }} - LuCI</title>"
-m = re.sub(r'<title>.*?</title>', new, s, count=1, flags=re.S)
-if m != s:
-    open(p, 'w', encoding='utf-8').write(m)
-    print("[diy] 主题标题已覆盖为 LuCI 动态标题")
-else:
-    print("[diy] 未在 header.ut 找到 <title> 标签，跳过")
-PY
-    fi
-
-    # 删除 fanchmwrt 主题整个 <footer> 区域（保留 #modemenu 挂载点，否则 menu-fanchmwrt.js 的 renderModeMenu 找不到 #modemenu 直接 return，顶部菜单失效）
-    _THEME_FOOTER="$PROJECT_ROOT/feeds/fwx/luci-theme-fanchmwrt/ucode/template/themes/fanchmwrt/footer.ut"
-    if [ -f "$_THEME_FOOTER" ]; then
-        python3 - "$_THEME_FOOTER" <<'PY'
-import sys, re
-p = sys.argv[1]
-s0 = open(p, encoding='utf-8').read()
-s = re.sub(r'<span>.*?</span>\s*', '', s0, flags=re.S)
-s = re.sub(r'</?footer>', '', s)
-s = re.sub(r'\n[ \t]*\n[ \t]*\n', '\n\n', s)
-if s != s0:
-    open(p, 'w', encoding='utf-8').write(s)
-    print("[diy] 已删除主题 footer 区域（保留 #modemenu 与菜单脚本）")
-else:
-    print("[diy] footer.ut 未变化，跳过")
-PY
-    fi
+    # 主题标题/footer 处理统一移至 'themes' 阶段（feeds update -a 之后，可覆盖 fanchmwrt/argon/bootstrap 三套）
     ;;
 
 ruby)
@@ -178,6 +145,64 @@ ruby)
     else
         echo "[diy] WARN: 未找到 $RUBY_DIR（feeds update 是否已执行？），跳过 ruby YJIT 解耦" >&2
     fi
+    ;;
+
+themes)
+    # 主题 footer 移除 + fanchmwrt 标题覆盖。须在 feeds update -a 之后运行：
+    # fanchmwrt 是 src-link 本地源（always 可用），argon/bootstrap 在 feeds/luci（src-git，update 后才存在）。
+    echo "[diy] themes: 移除各主题 footer（fanchmwrt/argon/bootstrap）"
+    OPENWRT_DIR="$PROJECT_ROOT/openwrt"
+    _FWX_THEME="$PROJECT_ROOT/feeds/fwx/luci-theme-fanchmwrt"
+    _LUCIF_DIR="$OPENWRT_DIR/feeds/luci"
+    python3 - "$_FWX_THEME" "$_LUCIF_DIR" <<'PY'
+import sys, os, re, glob
+fwm_root, luci_dir = sys.argv[1], sys.argv[2]
+
+def strip_footer(path, keep_inner):
+    s0 = open(path, encoding='utf-8').read()
+    if keep_inner:
+        # fanchmwrt：保留 #modemenu 挂载点（顶部菜单脚本依赖），仅剥离 <span> 文案与 footer 标签
+        s = re.sub(r'<span>.*?</span>\s*', '', s0, flags=re.S)
+        s = re.sub(r'</?footer>', '', s)
+    else:
+        # argon / bootstrap：移除整个 <footer> 区域
+        s = re.sub(r'<footer\b.*?</footer>', '', s0, flags=re.S)
+    s = re.sub(r'\n[ \t]*\n[ \t]*\n', '\n\n', s)
+    if s != s0:
+        open(path, 'w', encoding='utf-8').write(s)
+        return True
+    return False
+
+# fanchmwrt：标题覆盖为 LuCI 动态标题
+for h in glob.glob(os.path.join(fwm_root, '**', 'header.ut'), recursive=True):
+    s0 = open(h, encoding='utf-8').read()
+    new = "<title>{{ striptags(`${boardinfo.hostname ?? '?'}${node ? ` - ${node.title}` : ''}`) }} - LuCI</title>"
+    m = re.sub(r'<title>.*?</title>', new, s0, count=1, flags=re.S)
+    if m != s0:
+        open(h, 'w', encoding='utf-8').write(m)
+        print("[diy] 主题标题已覆盖为 LuCI 动态标题: " + h)
+    else:
+        print("[diy] 未在 header.ut 找到 <title>: " + h)
+
+# fanchmwrt：移除 footer（保留 #modemenu）
+for f in glob.glob(os.path.join(fwm_root, '**', 'footer.ut'), recursive=True):
+    if strip_footer(f, keep_inner=True):
+        print("[diy] 已移除 fanchmwrt footer（保留 #modemenu）: " + f)
+    else:
+        print("[diy] fanchmwrt footer 无变化: " + f)
+
+# argon / bootstrap：移除整个 footer
+for theme in ('argon', 'bootstrap'):
+    found = False
+    for f in glob.glob(os.path.join(luci_dir, 'themes', 'luci-theme-' + theme, '**', 'footer.ut'), recursive=True):
+        if strip_footer(f, keep_inner=False):
+            print("[diy] 已移除 " + theme + " footer: " + f)
+        else:
+            print("[diy] " + theme + " footer 无变化: " + f)
+        found = True
+    if not found:
+        print("[diy] WARN: 未找到 " + theme + " footer.ut（feeds/luci 是否已 update？）", file=sys.stderr)
+PY
     ;;
 
 after)
@@ -509,7 +534,7 @@ EOT
         chmod 600 "$SHADOW" 2>/dev/null || true
     fi
     ;;
-*) error_exit "PHASE仅支持 before / after" ;;
+*) error_exit "PHASE仅支持 before / themes / ruby / after" ;;
 esac
 
 echo "[diy] done: $PHASE ${PROFILE_TYPE:-N/A}"
