@@ -81,7 +81,7 @@ before)
     [ -f "$FEED_CONF_SRC" ] || error_exit "缺失feed配置: $FEED_CONF_SRC"
     rm -f feeds.conf
     cp "$FEED_CONF_SRC" feeds.conf
-    # src-link 用项目根相对路径，但 feeds update 在 openwrt TOPDIR 解析，改写为绝对路径以定位 vendored 目录
+    # src-link 用项目根相对路径，但 feeds update 在 openwrt TOPDIR 解析，改写为绝对路径以定位 feeds/fwx 目录（含动态拉取的 fwx/、luci-theme-fanchmwrt/ 与 vendored 的 fwxd/libfwx_common）
     sed -i "s#\./feeds/fwx#$PROJECT_ROOT/feeds/fwx#g" feeds.conf
 
     # kmod-fwx 硬依赖 fanchmwrt fork 内核补丁(给 struct nf_conn 加 fwx_data，原版 6.12 内核无)，注入 6.12 hack 目录。仅 --with-fwx。
@@ -109,7 +109,7 @@ before)
             echo "[diy] WARN: 未找到 fwx kmod 补丁 $FWX_KMOD_PATCH (kmod-fwx 可能编译失败)" >&2
         fi
 
-        # kmod-fwx DPI 边界守卫：防止畸形/截断包在 fwx_match_feature 路径越界读 skb 触发内核 oops（真因见工作日志）
+        # kmod-fwx DPI 边界守卫：防止畸形/截断包在 fwx_match_feature 路径越界读 skb 触发内核 oops
         FWX_CRASH_PATCH="$PROJECT_ROOT/patches/fwx/fwx-match-feature-crash.patch"
         if [ -f "$FWX_CRASH_PATCH" ]; then
             if patch -p1 --dry-run -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_CRASH_PATCH" >/dev/null 2>&1; then
@@ -175,7 +175,7 @@ after)
     ip_esc=$(_escape_uci "$CUSTOM_IP")
     log_server_esc=$(_escape_uci "$LOG_SERVER")
 
-        # ===== 公共配置块（各 profile 按需引用） =====
+    # ===== 公共配置块（各 profile 按需引用） =====
     # IP 转发开关：所有 profile 统一开启
     IP_FORWARD_LN='grep -q '\''net.ipv4.ip_forward=1'\'' /etc/sysctl.conf || echo '\''net.ipv4.ip_forward=1'\'' >> /etc/sysctl.conf'
 

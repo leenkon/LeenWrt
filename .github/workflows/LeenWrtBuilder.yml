@@ -110,13 +110,13 @@ jobs:
           cp $GITHUB_WORKSPACE/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config .config
           sed -i 's/\r$//' .config
 
-          # fwx 应用过滤（可选）：kmod-fwx 由 sync-fwx.sh 在构建前按 FWX_COMMIT 动态拉取 + 15 luci-app-fwx-* via src-git fwxluci（fwxd/libfwx_common 仍 vendored）
+          # fwx 应用过滤（可选）：kmod-fwx 由 sync-fwx.sh 在构建前按 FWX_COMMIT 动态拉取；15 个 luci-app-fwx-* 经 src-git fwxluci
           if $WITH_FWX; then
             FWX_LIST="$GITHUB_WORKSPACE/feeds/fwx/fwx-packages.list"
             if [ -f "$FWX_LIST" ]; then
               {
                 echo ""
-                echo "# ===== fwx 应用过滤栈（kmod-fwx 构建期按 FWX_COMMIT 动态拉取 + 15 luci-app-fwx-* via src-git fwxluci；fwxd/libfwx_common vendored）====="
+                echo "# ===== fwx 应用过滤栈（kmod-fwx/fwxd/libfwx_common 经 src-link fwx；15 个 luci-app-fwx-* 经 src-git fwxluci）====="
                 while read -r pkg; do
                   [ -n "$pkg" ] && [ "${pkg#\#}" = "$pkg" ] && echo "CONFIG_PACKAGE_${pkg}=y"
                 done < "$FWX_LIST"

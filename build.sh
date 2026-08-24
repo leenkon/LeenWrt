@@ -241,7 +241,7 @@ if [[ "$WITH_FWX" = "true" ]]; then
   if [[ -f "$FWX_LIST" ]]; then
     {
       echo ""
-      echo "# ===== fwx 应用过滤栈（kmod-fwx 构建期按 SHA 动态拉取 + luci-app-fwx-* via src-git fwxluci；fwxd/libfwx_common vendored）====="
+      echo "# ===== fwx 应用过滤栈（kmod-fwx/fwxd/libfwx_common 经 src-link fwx 本地 feed；15 个 luci-app-fwx-* 经 src-git fwxluci）====="
       while read -r pkg; do
         [[ -n "$pkg" && "$pkg" != \#* ]] && echo "CONFIG_PACKAGE_${pkg}=y"
       done < "$FWX_LIST"
@@ -252,8 +252,8 @@ if [[ "$WITH_FWX" = "true" ]]; then
   fi
 fi
 
-# fwx/fwxluci 为本地 feed，不作设备端远程 apk 仓库(官方镜像无 packages.adb，否则 apk update 404)；设 m 即注释保留。
-# 仅开启 fwx 时注册这两个 feed；不开启则连 feed 都不启用，杜绝任何 fwx 相关包被自动选中。
+# fwx 经 src-link 本地 feed、fwxluci 经 src-git 远程 feed；设为 m（即注释保留）避免成为设备端 apk 仓库（官方镜像无 packages.adb，apk update 会 404）。
+# 仅开启 fwx 时注册这两个 feed；否则不启用，杜绝任何 fwx 包被自动选中。
 if [[ "$WITH_FWX" = "true" ]]; then
   for _f in fwx fwxluci; do
     if ! grep -q "^CONFIG_FEED_${_f}=" .config; then
@@ -351,19 +351,6 @@ success "完成"
 # 7. 编译
 echo -e "\n${YELLOW}[7/7] 编译固件...${NC}"
 make -j$(nproc) || make -j1 V=s
-
-# 构建结束：仅回退 fwx kmod 6.12 补丁(不影响 feeds/fwx/fwx 其它本地改动)
-FWX_KMOD_PATCH="$SCRIPT_DIR/patches/fwx/kmod-nf_send_reset-6.12.patch"
-if [ -f "$FWX_KMOD_PATCH" ]; then
-    if patch -p1 -R --dry-run -d "$SCRIPT_DIR/feeds/fwx/fwx" < "$FWX_KMOD_PATCH" >/dev/null 2>&1; then
-        patch -p1 -R -d "$SCRIPT_DIR/feeds/fwx/fwx" < "$FWX_KMOD_PATCH"
-        echo "[build] 已回退 fwx kmod 6.12 兼容补丁(仅补丁本身,不影响其他本地改动)"
-    else
-        echo "[build] fwx kmod 补丁未应用或已回退,跳过清理"
-    fi
-else
-    echo "[build] 警告: 未找到 fwx kmod 补丁 $FWX_KMOD_PATCH,跳过回退"
-fi
 
 echo -e "\n${GREEN}========================================  编译完成!  ========================================${NC}"
 echo "固件位置: $OPENWRT_DIR/bin/targets/x86/64/"
