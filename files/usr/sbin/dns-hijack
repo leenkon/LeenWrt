@@ -1,5 +1,6 @@
 #!/bin/sh
-# DNS 劫持：LAN 明文 :53 重定向到本机 ADGH(:53)；ADGH 缺失/未监听时回退 dnsmasq :53 直连公网 DNS（自愈防断网）。
+# DNS 劫持(绑定 ADGH 生命周期)：LAN 明文 :53 重定向到本机 ADGH(:53)。
+# 由 adguardhome init.d 在 ADGH 监听 :53 后调用；ADGH 未安装/未就绪则不布表(避免重定向到空端口)。
 # priority -150 早于 firewall4 dstnat(-100)；旁路由 IP 由 lan.ipaddr 末段推 .2 放行自身查询避免环路。
 if ! command -v nft >/dev/null 2>&1; then
     logger -t dns-hijack "ERROR: nft not found"
@@ -8,7 +9,11 @@ fi
 
 nft delete table inet dns_hijack 2>/dev/null
 
-# :53 是否真有 ADGH 监听（否则不劫持，避免重定向到空端口）
+# 仅当 ADGH 安装且监听 :53 才劫持(脚本由 adguardhome init.d 调用)
+if [ ! -x /usr/bin/AdGuardHome ]; then
+    logger -t dns-hijack "AdGuardHome 未安装，跳过劫持"
+    exit 0
+fi
 port_listen() {
     if command -v ss >/dev/null 2>&1; then
         ss -lun 2>/dev/null | grep -q ':53 '
@@ -18,28 +23,8 @@ port_listen() {
         return 1
     fi
 }
-
-# 自愈回退：dnsmasq 回到 :53 直连公网 DNS（覆盖卸载 ADGH/OC）
-fallback_dns() {
-    uci -q delete dhcp.@dnsmasq[0].port
-    uci -q delete dhcp.@dnsmasq[0].server
-    uci add_list dhcp.@dnsmasq[0].server='223.5.5.5'
-    uci add_list dhcp.@dnsmasq[0].server='223.6.6.6'
-    uci set dhcp.@dnsmasq[0].noresolv='1'
-    uci set dhcp.@dnsmasq[0].dns_redirect='0'
-    uci commit dhcp
-    /etc/init.d/dnsmasq restart 2>/dev/null
-}
-
-# 运行期自愈：仅 ADGH 二进制缺失(卸载)才复位 dnsmasq，避免启动竞态时与尚未绑定的 ADGH 抢 :53；
-# "进程在但 :53 未就绪"按瞬态处理，仅清表不碰 dnsmasq（ADGH 随后自行绑定 :53）。
-if [ ! -x /usr/bin/AdGuardHome ]; then
-    logger -t dns-hijack "AdGuardHome 未安装，回退 dnsmasq :53 直连公网 DNS（自愈）"
-    fallback_dns
-    exit 0
-fi
 if ! port_listen; then
-    logger -t dns-hijack "AdGuardHome 未在监听 :53，跳过劫持（回退 DHCP DNS，避免断网）"
+    logger -t dns-hijack "AdGuardHome 未在监听 :53，跳过劫持"
     exit 0
 fi
 

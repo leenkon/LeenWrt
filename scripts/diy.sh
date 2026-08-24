@@ -269,18 +269,6 @@ uci set firewall.@forwarding[-1].dest='wan'
 EOF
 )
 
-    # full 共用：dns-hijack + firewall include（放在最后，避免上游未就绪时形成黑洞）
-    DNS_HIJACK_BLK=$(cat <<'EOF'
-chmod 755 /usr/sbin/dns-hijack
-/usr/sbin/dns-hijack
-uci -q delete firewall.dns_hijack_include
-uci set firewall.dns_hijack_include=include
-uci set firewall.dns_hijack_include.path='/usr/sbin/dns-hijack'
-uci set firewall.dns_hijack_include.enabled='1'
-uci commit firewall
-EOF
-)
-
     # full 共用：不劫持时改用 firewall REJECT lan->wan :53，强制走路由器 DNS(DHCP option 6 已公告)；排除旁路由自身
     DNS_HIJACK_REJECT_BLK=$(cat <<'EOF'
 BYPASS_IP=$(uci -q get network.lan.ipaddr 2>/dev/null | sed 's/\.[0-9]*$/.2/')
@@ -477,11 +465,16 @@ EOT
             cat >> "$OUT" <<EOT
 $ADGH_ENABLE_BLK
 EOT
+            # 劫持绑定到 ADGH 生命周期：adguardhome init.d 在 ADGH 监听 :53 后布表、停时清表，
+            # 不再注册独立 firewall include；dns_hijack=0 时改用 REJECT 强制走路由器 DNS。
+            uci -q delete adguardhome.config.dns_hijack
             if [ "$WITH_DNS_HIJACK" = "1" ]; then
-                printf '%s\n' "$DNS_HIJACK_BLK" >> "$OUT"
+                uci set adguardhome.config.dns_hijack='1'
             else
+                uci set adguardhome.config.dns_hijack='0'
                 printf '%s\n' "$DNS_HIJACK_REJECT_BLK" >> "$OUT"
             fi
+            uci commit adguardhome
         fi
     fi
 

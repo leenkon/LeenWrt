@@ -57,8 +57,21 @@ start_service() {
 	procd_set_param respawn
 	procd_close_instance
 
-	# ADGH 起来后重建劫持表（dns-hijack 探测未就绪会自动跳过）
-	( sleep 3; /usr/sbin/dns-hijack 2>/dev/null ) &
+	# 劫持绑定 ADGH 生命周期：监听 :53 后布表；停时清表(stop_service)。dns_hijack=0 不劫持。
+	local dhijack
+	config_get_bool dhijack config dns_hijack 1
+	if [ "$dhijack" = "1" ] && [ -x /usr/sbin/dns-hijack ]; then
+		( local i
+		  for i in $(seq 1 20); do
+			if ss -lun 2>/dev/null | grep -q ':53 ' || netstat -lun 2>/dev/null | grep -q ':53 '; then
+				chmod 755 /usr/sbin/dns-hijack
+				/usr/sbin/dns-hijack
+				logger -t adguardhome "ADGH 已监听 :53，已布 DNS 劫持"
+				break
+			fi
+			sleep 1
+		  done ) &
+	fi
 }
 
 # ADGH 停止/卸载时立即自愈：清劫持表 + 复位 dnsmasq :53。
