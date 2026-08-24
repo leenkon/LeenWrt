@@ -80,6 +80,13 @@ else
 fi
 NO_ADGH="false"; [ "$WITH_ADGH" = "false" ] && NO_ADGH="true"
 
+# DNS 劫持开关（默认开启；完整路由关闭时改用 firewall REJECT 强制走路由器 DNS）。旁路由不劫持故忽略。
+WITH_DNS_HIJACK="true"
+if [[ "$RUN_TYPE" == "full" ]]; then
+  read -p "启用 DNS 劫持(关闭则 REJECT 强制路由器 DNS)? [Y/n]: " dh
+  WITH_DNS_HIJACK="true"; [[ "$dh" =~ ^[Nn]$ ]] && WITH_DNS_HIJACK="false"
+fi
+
 # fwx 应用过滤（可选，默认开启）：包清单见 feeds/fwx/fwx-packages.list
 # 旁路由不安装 fwx：应用过滤在主路由/完整路由生效；且旁路由无 fwx 自定义页面，故可安全启用 argon 主题
 WITH_FWX="true"
@@ -98,6 +105,10 @@ FWX_FLAG=""
 # 同理，OC 仅显式开启时才传 --with-oc（避免 "false" 非空串误展开）
 OC_FLAG=""
 [ "$WITH_OC" = "true" ] && OC_FLAG="--with-oc"
+
+# DNS 劫持：默认开启，仅显式关闭时传 --no-dns-hijack
+DNS_HIJACK_FLAG=""
+[ "$WITH_DNS_HIJACK" = "true" ] || DNS_HIJACK_FLAG="--no-dns-hijack"
 
 # Root密码
 read -p "Root密码 [默认: password]: " rp
@@ -295,7 +306,7 @@ NOADGH_ARG=""
   ${GATEWAY_IP:+--gateway "$GATEWAY_IP"} \
   ${PPPOE_USER:+--pppoe-user "$PPPOE_USER"} ${PPPOE_PASS:+--pppoe-pass "$PPPOE_PASS"} \
   ${NOADGH_ARG:+"$NOADGH_ARG"} \
-  ${FWX_FLAG} ${OC_FLAG} \
+  ${FWX_FLAG} ${OC_FLAG} ${DNS_HIJACK_FLAG} \
   --root-pass "$ROOT_PWD"
 success "完成"
 
@@ -332,12 +343,15 @@ case "$RUN_TYPE" in
     rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
     ;;
   full)
-    # 未勾选 AdGuardHome：清理 ADGH 静态文件，且不劫持 DNS(dnsmasq 占 :53)
+    # 未勾选 AdGuardHome：清理 ADGH 静态文件
     if [ "$WITH_ADGH" = "false" ]; then
       rm -rf "$OPENWRT_DIR/files/etc/adguardhome"
       rm -f "$OPENWRT_DIR/files/usr/bin/AdGuardHome"
       rm -f "$OPENWRT_DIR/files/etc/init.d/adguardhome"
       rm -f "$OPENWRT_DIR/files/etc/config/adguardhome"
+    fi
+    # 未装 ADGH 或关闭劫持(改用 REJECT)：dns-hijack 脚本不再使用
+    if [ "$WITH_ADGH" = "false" ] || [ "$WITH_DNS_HIJACK" = "false" ]; then
       rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
     fi
     # 未勾选 OpenClash：清理 OC 静态文件

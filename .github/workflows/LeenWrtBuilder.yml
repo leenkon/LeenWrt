@@ -13,6 +13,7 @@ on:
       with_fwx: {description: 'fwx应用过滤', type: boolean, default: true}
       with_oc: {description: 'OpenClash', type: boolean, default: true}
       with_adgh: {description: 'AdGuardHome', type: boolean, default: true}
+      dns_hijack: {description: 'DNS劫持(关=REJECT)', type: boolean, default: true}
       root_password: {description: 'root密码', type: string, default: ''}
 permissions:
   contents: write
@@ -153,11 +154,13 @@ jobs:
           PUSER="${{ github.event.inputs.pppoe_username }}"; PPASS="${{ github.event.inputs.pppoe_password }}"
           NOADGH_ARG=""
           [ "$NO_ADGH" = "true" ] && NOADGH_ARG="--no-adgh"
+          DNS_HIJACK_FLAG=""
+          [ "${{ github.event.inputs.dns_hijack }}" = "true" ] || DNS_HIJACK_FLAG="--no-dns-hijack"
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p after -t $RUN_TYPE --files-dir "$FILES_DIR_ABS" \
             ${CIP:+--ip "$CIP"} ${CGW:+--gateway "$CGW"} \
             ${PUSER:+--pppoe-user "$PUSER"} ${PPASS:+--pppoe-pass "$PPASS"} \
             ${NOADGH_ARG:+"$NOADGH_ARG"} \
-            $FWX_FLAG $OC_FLAG \
+            $FWX_FLAG $OC_FLAG $DNS_HIJACK_FLAG \
             --root-pass "$ROOTPWD"
 
           $WITH_OC && { chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh; $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh $GITHUB_WORKSPACE --files-dir "$FILES_DIR_ABS"; } || true
@@ -178,6 +181,8 @@ jobs:
               if [ "$WITH_ADGH" != "true" ]; then
                 rm -rf files/etc/adguardhome
                 rm -f files/usr/bin/AdGuardHome files/etc/init.d/adguardhome files/etc/config/adguardhome
+              fi
+              if [ "$WITH_ADGH" != "true" ] || [ "${{ github.event.inputs.dns_hijack }}" != "true" ]; then
                 rm -f files/usr/sbin/dns-hijack
               fi
               if [ "$WITH_OC" != "true" ]; then

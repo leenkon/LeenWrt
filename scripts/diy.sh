@@ -24,7 +24,7 @@ DNS_MAIN="223.5.5.5"
 DNS_BACKUP="223.6.6.6"
 
 VERSION="" PHASE="" PROFILE_TYPE="" FEEDS_SRC="" FILES_DIR_NAME="files"
-NO_ADGH=0 WITH_FWX=0 WITH_OC=0
+NO_ADGH=0 WITH_FWX=0 WITH_OC=0 WITH_DNS_HIJACK=1
 CUSTOM_IP="" CUSTOM_GATEWAY="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD="" LOG_SERVER=""
 
 while [ $# -gt 0 ]; do
@@ -38,6 +38,7 @@ while [ $# -gt 0 ]; do
         --pppoe-pass) PPPOE_PASSWORD="$2"; shift 2 ;;
         --root-pass)  ROOT_PASSWORD="$2"; shift 2 ;;
         --no-adgh)   NO_ADGH=1; shift ;;
+        --no-dns-hijack) WITH_DNS_HIJACK=0; shift ;;
         --with-fwx)  WITH_FWX=1; shift ;;
         --with-oc)   WITH_OC=1; shift ;;
         --log-server) LOG_SERVER="$2"; shift 2 ;;
@@ -255,6 +256,25 @@ uci commit firewall
 EOF
 )
 
+    # full 共用：不劫持时改用 firewall REJECT lan->wan :53，强制走路由器 DNS(DHCP option 6 已公告)；排除旁路由自身
+    DNS_HIJACK_REJECT_BLK=$(cat <<'EOF'
+BYPASS_IP=$(uci -q get network.lan.ipaddr 2>/dev/null | sed 's/\.[0-9]*$/.2/')
+for _z in wan wan6; do
+    uci -q get firewall.$_z >/dev/null 2>&1 || continue
+    uci -q delete firewall.reject_lan_dns_$_z
+    uci set firewall.reject_lan_dns_$_z=rule
+    uci set firewall.reject_lan_dns_$_z.name="Reject LAN->$_z :53 (force router DNS)"
+    uci set firewall.reject_lan_dns_$_z.src='lan'
+    [ -n "$BYPASS_IP" ] && uci set firewall.reject_lan_dns_$_z.src_ip="!$BYPASS_IP"
+    uci set firewall.reject_lan_dns_$_z.dest="$_z"
+    uci set firewall.reject_lan_dns_$_z.dest_port='53'
+    uci set firewall.reject_lan_dns_$_z.proto='udp tcp'
+    uci set firewall.reject_lan_dns_$_z.target='REJECT'
+done
+uci commit firewall
+EOF
+)
+
     # full 共用：启用 UPnP/IGD 并绑 lan->wan（miniupnpd 已编入镜像）
     UPNP_BLK=$(cat <<'EOF'
 uci -q get upnpd.config >/dev/null || uci set upnpd.config=upnpd
@@ -431,9 +451,12 @@ EOT
         if [ "$NO_ADGH" != "1" ]; then
             cat >> "$OUT" <<EOT
 $ADGH_ENABLE_BLK
-
-$DNS_HIJACK_BLK
 EOT
+            if [ "$WITH_DNS_HIJACK" = "1" ]; then
+                printf '%s\n' "$DNS_HIJACK_BLK" >> "$OUT"
+            else
+                printf '%s\n' "$DNS_HIJACK_REJECT_BLK" >> "$OUT"
+            fi
         fi
     fi
 
