@@ -181,8 +181,6 @@ ruby)
 
 after)
     echo "[diy] after: $PROFILE_TYPE"
-    # bypass 强制 NO_ADGH=0（旁路由即 ADGH+OC 设备）
-    [ "$PROFILE_TYPE" != "full" ] && NO_ADGH=0
     case "$FILES_DIR_NAME" in
       /*) FB_DIR="$FILES_DIR_NAME" ;;
       *)  FB_DIR="$PROJECT_ROOT/$FILES_DIR_NAME" ;;

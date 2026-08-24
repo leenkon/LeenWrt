@@ -91,9 +91,7 @@ else
   [ "$WITH_FWX" = "true" ] && success "将包含 fwx 应用过滤"
 fi
 
-# 仅当显式开启时才传 --with-fwx。注意不可用 ${WITH_FWX:+"--with-fwx"}：
-# WITH_FWX="false" 时 "false" 为非空串仍会展开成 --with-fwx，导致 diy.sh 误判开启、
-# 注入 950 内核补丁(fwx_data)等。必须用显式 true 判断。
+# 仅显式 true 才传 --with-fwx（避免 "false" 非空串经 ${WITH_FWX:+"--with-fwx"} 误展开成 --with-fwx）
 FWX_FLAG=""
 [ "$WITH_FWX" = "true" ] && FWX_FLAG="--with-fwx"
 
@@ -257,8 +255,8 @@ if [[ "$WITH_FWX" = "true" ]]; then
   fi
 fi
 
-# fwx 经 src-link 本地 feed、fwxluci 经 src-git 远程 feed；设为 m（即注释保留）避免成为设备端 apk 仓库（官方镜像无 packages.adb，apk update 会 404）。
-# 仅开启 fwx 时注册这两个 feed；否则不启用，杜绝任何 fwx 包被自动选中。
+# 确保 fwx/fwxluci feed 为 =m（保留但不设为 =y，避免成为设备端 apk 仓库：官方镜像无 packages.adb，apk update 会 404）。
+# 种子 config 已含这两行；此处兜底强制 =m（若有人误改 =y 则纠正），而非真正注册 feed。
 if [[ "$WITH_FWX" = "true" ]]; then
   for _f in fwx fwxluci; do
     if ! grep -q "^CONFIG_FEED_${_f}=" .config; then
