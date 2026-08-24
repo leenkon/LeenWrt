@@ -159,6 +159,26 @@ PY
     fi
     ;;
 
+ruby)
+    # ruby YJIT 解耦（仅 x86_64/aarch64）：immortalwrt 25.12 的 lang/ruby 默认
+    # RUBY_ENABLE_YJIT=y，PKG_BUILD_DEPENDS 含 rust/host -> 拉起 rustc 工具链，其
+    # 预编译 LLVM 从 rust CI artifact 下载（nightly 产物会被清理 -> 404 -> 构建挂）。
+    # OpenClash 依赖 ruby + ruby-yaml（不可选），勾选 OC 时必触发。正确治本：解耦
+    # YJIT 与 rust/host，ruby 走 --disable-yjit 不需 rust。必须在 feeds update -a
+    # 之后、feeds install 之前执行（feeds/packages 此时已拉取到 openwrt 工作区）。
+    echo "[diy] ruby: 解耦 YJIT 与 rust/host（x86_64/aarch64）"
+    RUBY_DIR="$PROJECT_ROOT/openwrt/feeds/packages/lang/ruby"
+    if [ -d "$RUBY_DIR" ]; then
+        # Makefile: 去掉 RUBY_ENABLE_YJIT:rust/host 条件依赖，仅保留 ruby/host
+        sed -i -E 's/(PKG_BUILD_DEPENDS:=ruby/host) RUBY_ENABLE_YJIT:rust/host/\1/' "$RUBY_DIR/Makefile"
+        # Config.in: 删除 x86_64/aarch64 默认开启 YJIT（让 defconfig 不再翻成 =y）
+        sed -i -E '/^[[:space:]]*default y if x86_64\|\|aarch64[[:space:]]*$/d' "$RUBY_DIR/Makefile"
+        echo "[diy] ruby: 已解耦 YJIT（Makefile 依赖 + Config.in default 均清除）"
+    else
+        echo "[diy] WARN: 未找到 $RUBY_DIR（feeds update 是否已执行？），跳过 ruby YJIT 解耦" >&2
+    fi
+    ;;
+
 after)
     echo "[diy] after: $PROFILE_TYPE"
     # bypass 强制 NO_ADGH=0（旁路由即 ADGH+OC 设备）

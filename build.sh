@@ -214,6 +214,11 @@ cd "$OPENWRT_DIR"
 "$DIY" -v "$MAIN_VER" -p before -t "$RUN_TYPE" --feeds "$FEEDS_FILE_ABS" ${FWX_FLAG}
 ./scripts/feeds update -a
 
+# ruby YJIT 解耦（仅勾选 OpenClash 时需要 ruby；x86_64 默认 YJIT=y 会拉起 rust/host 工具链致构建失败）
+if [[ "$WITH_OC" == "true" ]]; then
+  "$DIY" -v "$MAIN_VER" -p ruby -t "$RUN_TYPE"
+fi
+
 # OpenClash LuCI 替换（仅 Mini 旁路由 / Full 勾选 OC 时）
 if [[ "$WITH_OC" == "true" ]]; then
   "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
