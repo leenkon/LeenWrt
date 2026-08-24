@@ -15,6 +15,25 @@ boot() {
 	start "$@"
 }
 
+# ---- 运行期自愈辅助 ----
+# 统一设置 dnsmasq 端口与上游：ADGH 模式让出 :53 退居 :5453 兜底；
+# 传空端口则复位到 :53 直连公网 DNS（卸载/停止 ADGH 后回退，防断网）。
+setup_dnsmasq() {
+	local port="$1"
+	if [ -n "$port" ]; then
+		uci -q set dhcp.@dnsmasq[0].port="$port"
+	else
+		uci -q delete dhcp.@dnsmasq[0].port
+	fi
+	uci -q delete dhcp.@dnsmasq[0].server
+	uci add_list dhcp.@dnsmasq[0].server='223.5.5.5'
+	uci add_list dhcp.@dnsmasq[0].server='223.6.6.6'
+	uci set dhcp.@dnsmasq[0].noresolv='1'
+	uci set dhcp.@dnsmasq[0].dns_redirect='0'
+	uci commit dhcp
+	/etc/init.d/dnsmasq restart 2>/dev/null
+}
+
 start_service() {
 	# 开机阶段先不启动，等接口 up 后再拉起，避免网络未就绪导致解析失败
 	[ -n "$ADGUARDHOME_BOOT" ] && return 0
@@ -23,6 +42,9 @@ start_service() {
 	local enabled
 	config_get_bool enabled config enabled 1
 	[ "$enabled" = "1" ] || return 1
+
+	# 自愈反向：ADGH 拉起前把 dnsmasq 让回 :5453，避免 stop->restart 与 ADGH 抢 :53
+	setup_dnsmasq 5453
 
 	mkdir -m 0700 -p /var/lib/adguardhome
 
@@ -36,6 +58,19 @@ start_service() {
 	procd_set_param stderr 1
 	procd_set_param respawn
 	procd_close_instance
+
+	# ADGH 起来后重建 DNS 劫持（覆盖 stop_service 清表 + 接口 up 首启场景）；
+	# 若 ADGH 仍未就绪，dns-hijack 自动跳过，无副作用。
+	( sleep 3; /usr/sbin/dns-hijack 2>/dev/null ) &
+}
+
+# ADGH 停止/卸载时立即自愈：清劫持表 + 复位 dnsmasq :53 直连公网 DNS。
+# 注：LeenWrt 的 dnsmasq 在 ADGH 模式下占 :5453，仅清表（LeenWrt2 做法）会因 :53 无监听而断网，
+# 故此处额外复位 dnsmasq，使 DHCP 公告的路由器 DNS 可达（LeenWrt2 294d1fd/660edcc 的适配）。
+stop_service() {
+	nft delete table inet dns_hijack 2>/dev/null
+	setup_dnsmasq
+	logger -t adguardhome "ADGH 停止/卸载：已清除劫持并回退 dnsmasq :53（自愈防断网）"
 }
 
 service_triggers() {

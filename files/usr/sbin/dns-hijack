@@ -1,13 +1,51 @@
 #!/bin/sh
-# DNS 劫持：将 LAN 客户端明文 :53 重定向到本机解析器(主路由=dnsmasq 转发旁路过滤；完整路由=AdGuardHome)。
+# DNS 劫持：将 LAN 客户端明文 :53 重定向到本机解析器(AdGuardHome :53；自愈时回退 dnsmasq :53)。
 # priority -150 早于 firewall4 的 dstnat(-100)，确保劫持优先于其它 NAT 规则。
 # 旁路 IP 由 LAN IP 末段推为 .2(如 10.10.10.1 -> 10.10.10.2)，放行旁路由自身查询避免 DNS 环路。
+# 运行期自愈：若 AdGuardHome 未安装(:53 无监听)，回退 dnsmasq :53 直连公网 DNS，避免卸载/崩溃后
+# 劫持到空 :53 致全家断网（参照 LeenWrt2 的 660edcc / 294d1fd 修复）。
 if ! command -v nft >/dev/null 2>&1; then
     logger -t dns-hijack "ERROR: nft not found"
     exit 0
 fi
 
 nft delete table inet dns_hijack 2>/dev/null
+
+# ADGH 是否在监听 :53（二进制在且进程存活），否则不劫持，避免重定向到空端口
+port_listen() {
+    if command -v ss >/dev/null 2>&1; then
+        ss -lun 2>/dev/null | grep -q ':53 '
+    elif command -v netstat >/dev/null 2>&1; then
+        netstat -lun 2>/dev/null | grep -q ':53 '
+    else
+        return 1
+    fi
+}
+
+# 自愈回退：dnsmasq 回到 :53 直连公网 DNS，使 DHCP 公告的路由器 DNS 可达（覆盖卸载 ADGH/OC 场景）
+fallback_dns() {
+    uci -q delete dhcp.@dnsmasq[0].port
+    uci -q delete dhcp.@dnsmasq[0].server
+    uci add_list dhcp.@dnsmasq[0].server='223.5.5.5'
+    uci add_list dhcp.@dnsmasq[0].server='223.6.6.6'
+    uci set dhcp.@dnsmasq[0].noresolv='1'
+    uci set dhcp.@dnsmasq[0].dns_redirect='0'
+    uci commit dhcp
+    /etc/init.d/dnsmasq restart 2>/dev/null
+}
+
+# 运行期自愈：仅 ADGH 二进制缺失(卸载)才复位 dnsmasq，避免启动竞态时与尚未绑定的 ADGH 抢 :53；
+# "进程在但 :53 未就绪"按瞬态处理，仅清表不碰 dnsmasq（ADGH 随后自行绑定 :53）。
+if [ ! -x /usr/bin/AdGuardHome ]; then
+    logger -t dns-hijack "AdGuardHome 未安装，回退 dnsmasq :53 直连公网 DNS（自愈）"
+    fallback_dns
+    exit 0
+fi
+if ! port_listen; then
+    logger -t dns-hijack "AdGuardHome 未在监听 :53，跳过劫持（回退 DHCP DNS，避免断网）"
+    exit 0
+fi
+
 nft add table inet dns_hijack
 nft add chain inet dns_hijack prerouting '{ type nat hook prerouting priority -150; }'
 
