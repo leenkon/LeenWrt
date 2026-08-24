@@ -90,7 +90,7 @@ jobs:
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p before -t $RUN_TYPE --feeds "$FEEDS_FILE_ABS" $FWX_FLAG
           ./scripts/feeds update -a
 
-          # ruby YJIT 解耦（仅勾选 OpenClash 时需要 ruby；x86_64 默认 YJIT=y 会拉起 rust/host 工具链致构建失败）
+          # ruby YJIT 解耦（分支头 ruby 默认拉 rust/host 致构建失败；仅 WITH_OC 时）
           if $WITH_OC; then
             $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p ruby -t $RUN_TYPE
           fi

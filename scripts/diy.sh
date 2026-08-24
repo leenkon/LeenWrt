@@ -160,12 +160,8 @@ PY
     ;;
 
 ruby)
-    # ruby YJIT 解耦（仅 x86_64/aarch64）：immortalwrt 25.12 的 lang/ruby 默认
-    # RUBY_ENABLE_YJIT=y，PKG_BUILD_DEPENDS 含 rust/host -> 拉起 rustc 工具链，其
-    # 预编译 LLVM 从 rust CI artifact 下载（nightly 产物会被清理 -> 404 -> 构建挂）。
-    # OpenClash 依赖 ruby + ruby-yaml（不可选），勾选 OC 时必触发。正确治本：解耦
-    # YJIT 与 rust/host，ruby 走 --disable-yjit 不需 rust。必须在 feeds update -a
-    # 之后、feeds install 之前执行（feeds/packages 此时已拉取到 openwrt 工作区）。
+    # ruby YJIT 解耦：分支头 lang/ruby 默认 RUBY_ENABLE_YJIT=y -> 拉 rust/host -> rustc LLVM 404 构建挂。
+    # OpenClash 依赖 ruby(不可选)，故仅在 WITH_OC 时由 build.sh/workflow 调用。须 feeds update 后、install 前执行。
     echo "[diy] ruby: 解耦 YJIT 与 rust/host（x86_64/aarch64）"
     RUBY_DIR="$PROJECT_ROOT/openwrt/feeds/packages/lang/ruby"
     if [ -d "$RUBY_DIR" ]; then
@@ -263,8 +259,7 @@ uci -q get upnpd.config >/dev/null || uci set upnpd.config=upnpd
 uci set upnpd.config.enabled='1'
 uci set upnpd.config.internal_iface='lan'
 uci set upnpd.config.external_iface='wan'
-# secure=0：放宽 miniupnpd secure_mode。原 secure=1 对部分 LAN 客户端(游戏机/老设备)过严，
-# 会丢弃其 UPnP 映射请求导致"UPnP 无客户端"；miniupnpd 仅监听 internal_iface(lan)，不外泄到 wan。
+# secure=0：放宽 secure_mode，避免老设备 UPnP 映射被丢弃；miniupnpd 仅监听 lan 不外泄
 uci set upnpd.config.secure='0'
 uci commit upnpd
 /etc/init.d/miniupnpd enable
@@ -348,7 +343,7 @@ uci set dhcp.lan6.ignore='1'
 uci -q set dhcp.@dnsmasq[0].port='5453'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
-# 旁路由 dnsmasq 仅作 ADGH 兜底(:5453)，须配上游；noresolv=1 不读空 resolv.conf。
+# 旁路由 dnsmasq 仅作 ADGH 兜底(:5453)，noresolv=1 不读空 resolv.conf。
 uci -q delete dhcp.@dnsmasq[0].server
 uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
@@ -463,7 +458,7 @@ $REMOTE_SYSLOG_BLK
 uci commit system
 /etc/init.d/log restart
 
-# 固定 CPU 为 performance，避免降频导致网络抖动
+# 固定 CPU 为 performance 模式，避免降频抖动
 chmod 755 /etc/init.d/cpufreq-perf
 /etc/init.d/cpufreq-perf enable
 /etc/init.d/cpufreq-perf start
@@ -471,7 +466,7 @@ chmod 755 /etc/init.d/cpufreq-perf
 # 首启离线安装 apps/ 的 .apk：仅 enable，由 rc.d(S99) 启动后期执行(避免早期 apk 库未就绪)
 /etc/init.d/firstboot-pkgs enable
 
-# 主题默认浅色（99-custom 字典序后于 100_fwx，覆盖 fwx 出厂 theme_mode=1）
+# 主题默认浅色（覆盖 fwx 出厂 theme_mode=1）
 if uci -q get fwx.global >/dev/null 2>&1; then
     uci set fwx.global.theme_mode='0'
     uci commit fwx
