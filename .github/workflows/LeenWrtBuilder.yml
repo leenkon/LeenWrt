@@ -119,7 +119,7 @@ jobs:
           cp $GITHUB_WORKSPACE/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config .config
           sed -i 's/\r$//' .config
 
-          # fwx 应用过滤（可选）：kmod-fwx 由 sync-fwx.sh 在构建前按 FWX_COMMIT 动态拉取；15 个 luci-app-fwx-* 经 src-git fwxluci
+          # fwx 应用过滤（可选）：kmod-fwx 由 sync-fwx.sh 在构建前按 FWX_COMMIT 动态拉取；14 个 luci-app-fwx-* 经 src-git fwxluci
           if $WITH_FWX; then
             FWX_LIST="$GITHUB_WORKSPACE/feeds/fwx/fwx-packages.list"
             if [ -f "$FWX_LIST" ]; then

@@ -87,8 +87,7 @@ if [[ "$RUN_TYPE" == "full" ]]; then
   WITH_DNS_HIJACK="true"; [[ "$dh" =~ ^[Nn]$ ]] && WITH_DNS_HIJACK="false"
 fi
 
-# fwx 应用过滤（可选，默认开启）：包清单见 feeds/fwx/fwx-packages.list
-# 旁路由不安装 fwx：应用过滤在主路由/完整路由生效；且旁路由无 fwx 自定义页面，故可安全启用 argon 主题
+# fwx 应用过滤（可选，默认开启；包清单见 feeds/fwx/fwx-packages.list）。旁路由不安装 fwx（应用过滤在主路由生效，且无 fwx 页面故 mini 可用 argon 主题）
 WITH_FWX="true"
 if [[ "$RUN_TYPE" == "bypass" ]]; then
   WITH_FWX="false"

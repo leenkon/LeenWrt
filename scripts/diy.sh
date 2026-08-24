@@ -82,10 +82,10 @@ before)
     [ -f "$FEED_CONF_SRC" ] || error_exit "缺失feed配置: $FEED_CONF_SRC"
     rm -f feeds.conf
     cp "$FEED_CONF_SRC" feeds.conf
-    # src-link 用项目根相对路径，但 feeds update 在 openwrt TOPDIR 解析，改写为绝对路径以定位 feeds/fwx 目录（含动态拉取的 fwx/、luci-theme-fanchmwrt/ 与 vendored 的 fwxd/libfwx_common）
+    # src-link 用相对路径，但 feeds update 在 openwrt TOPDIR 解析，改写为绝对路径以定位 feeds/fwx（含动态拉取的 fwx/、luci-theme-fanchmwrt/ 与 vendored 的 fwxd/libfwx_common）
     sed -i "s#\./feeds/fwx#$PROJECT_ROOT/feeds/fwx#g" feeds.conf
 
-    # kmod-fwx 硬依赖 fanchmwrt fork 内核补丁(给 struct nf_conn 加 fwx_data，原版 6.12 内核无)，注入 6.12 hack 目录。仅 --with-fwx。
+    # kmod-fwx 硬依赖 fanchmwrt fork 内核补丁(给 struct nf_conn 加 fwx_data，原版 6.12 无)，注入 6.12 hack 目录。仅 --with-fwx。
     if [ "$WITH_FWX" = "1" ]; then
         FWX_KERN_PATCH="$PROJECT_ROOT/patches/fwx/950-fwx-nf-conn-struct-user-hook.patch"
         if [ -f "$FWX_KERN_PATCH" ]; then
