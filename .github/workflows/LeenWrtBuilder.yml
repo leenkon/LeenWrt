@@ -13,7 +13,7 @@ on:
       with_fwx: {description: 'fwx应用过滤', type: boolean, default: true}
       with_oc: {description: 'OpenClash', type: boolean, default: true}
       with_adgh: {description: 'AdGuardHome', type: boolean, default: true}
-      dns_hijack: {description: 'DNS劫持(关=REJECT)', type: boolean, default: true}
+      dns_hijack: {description: 'DNS劫持(关则仅 Full+ADGH 才 REJECT 强制路由器DNS；Mini 恒开)', type: boolean, default: true}
       root_password: {description: 'root密码', type: string, default: ''}
 permissions:
   contents: write

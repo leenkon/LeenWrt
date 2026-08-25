@@ -75,10 +75,10 @@ else
 fi
 NO_ADGH="false"; [ "$WITH_ADGH" = "false" ] && NO_ADGH="true"
 
-# DNS 劫持开关（默认开启；完整路由关闭时移除 dns-hijack、改 REJECT 强制走路由器 DNS）。旁路由固定开启，复用同一零抖动拓扑。
+# DNS 劫持开关（默认开启；关闭时仅 Full+ADGH 才 REJECT 强制路由器 DNS，纯主路由/仅OC不写REJECT；旁路由恒开，复用同一零抖动拓扑）。
 WITH_DNS_HIJACK="true"
 if [[ "$RUN_TYPE" == "full" ]]; then
-  read -p "启用 DNS 劫持(关闭则 REJECT 强制路由器 DNS)? [Y/n]: " dh
+  read -p "启用 DNS 劫持(关闭则 Full+ADGH 时 REJECT 强制路由器 DNS；旁路由恒开)? [Y/n]: " dh
   WITH_DNS_HIJACK="true"; [[ "$dh" =~ ^[Nn]$ ]] && WITH_DNS_HIJACK="false"
 fi
 
