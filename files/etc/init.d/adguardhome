@@ -15,7 +15,7 @@ boot() {
 	start "$@"
 }
 
-# 运行期自愈：统一设置 dnsmasq 端口与上游；ADGH 模式让出 :53 退居 :5453 兜底，传空则复位 :53 直连公网 DNS。
+# 统一设置 dnsmasq 端口：ADGH 模式让出 :53 退居 :5453，传空则复位 :53(保留构建期上游 server)。
 setup_dnsmasq() {
 	local port="$1"
 	if [ -n "$port" ]; then
@@ -23,9 +23,6 @@ setup_dnsmasq() {
 	else
 		uci -q delete dhcp.@dnsmasq[0].port
 	fi
-	uci -q delete dhcp.@dnsmasq[0].server
-	uci add_list dhcp.@dnsmasq[0].server='223.5.5.5'
-	uci add_list dhcp.@dnsmasq[0].server='223.6.6.6'
 	uci set dhcp.@dnsmasq[0].noresolv='1'
 	uci set dhcp.@dnsmasq[0].dns_redirect='0'
 	uci commit dhcp
@@ -74,8 +71,8 @@ start_service() {
 	fi
 }
 
-# ADGH 停止/卸载时立即自愈：清劫持表 + 复位 dnsmasq :53。
-# 注：LeenWrt 的 dnsmasq 在 ADGH 模式占 :5453，仅清表(LeenWrt2 做法)会致 :53 无监听断网，故额外复位(参照 294d1fd/660edcc)。
+# ADGH 停止/卸载立即自愈：清劫持表 + 复位 dnsmasq :53。
+# LeenWrt 的 dnsmasq 在 ADGH 模式占 :5453，仅清表(LeenWrt2 做法)会致 :53 无监听断网，故额外复位。
 stop_service() {
 	nft delete table inet dns_hijack 2>/dev/null
 	setup_dnsmasq
