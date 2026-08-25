@@ -466,15 +466,16 @@ EOT
 $ADGH_ENABLE_BLK
 EOT
             # 劫持绑定到 ADGH 生命周期：adguardhome init.d 在 ADGH 监听 :53 后布表、停时清表，
-            # 不再注册独立 firewall include；dns_hijack=0 时改用 REJECT 强制走路由器 DNS。
-            uci -q delete adguardhome.config.dns_hijack
-            if [ "$WITH_DNS_HIJACK" = "1" ]; then
-                uci set adguardhome.config.dns_hijack='1'
-            else
-                uci set adguardhome.config.dns_hijack='0'
+            # 不再注册独立 firewall include。dns_hijack 选项写入 adguardhome config，
+            # 在 99-custom.sh(设备首启)执行——构建机无 uci。dns_hijack=0 时改用 REJECT 强制走路由器 DNS。
+            cat >> "$OUT" <<EOT
+uci -q delete adguardhome.config.dns_hijack
+uci set adguardhome.config.dns_hijack='$WITH_DNS_HIJACK'
+uci commit adguardhome
+EOT
+            if [ "$WITH_DNS_HIJACK" != "1" ]; then
                 printf '%s\n' "$DNS_HIJACK_REJECT_BLK" >> "$OUT"
             fi
-            uci commit adguardhome
         fi
     fi
 
