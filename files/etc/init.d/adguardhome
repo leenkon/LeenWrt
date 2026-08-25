@@ -38,6 +38,13 @@ start_service() {
 	config_get_bool enabled config enabled 1
 	[ "$enabled" = "1" ] || return 1
 
+	# ADGH 二进制缺失(未安装/被卸载)：不抢占 :53，回退 dnsmasq :53 直连公网 DNS，避免断网
+	if [ ! -x "$PROG" ]; then
+		logger -t adguardhome "AdGuardHome 未安装，回退 dnsmasq :53（不布劫持）"
+		setup_dnsmasq
+		return 1
+	fi
+
 	# ADGH 拉起前让 dnsmasq 回 :5453，避免 stop->restart 抢 :53
 	setup_dnsmasq 5453
 
