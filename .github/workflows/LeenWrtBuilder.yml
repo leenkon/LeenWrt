@@ -177,9 +177,9 @@ jobs:
           mkdir -p files/etc/firstboot-pkgs/apps
           cp -f $GITHUB_WORKSPACE/apps/*.apk files/etc/firstboot-pkgs/apps/ 2>/dev/null || true
 
-          # 按勾选删除不需要的静态文件（对齐 build.sh）
+          # 按勾选删除不需要的静态文件（对齐 build.sh）。
+          # 旁路由固定 ADGH+OC 且劫持恒开启，dns-hijack 保留，与主路由走同一零抖动拓扑。
           case "$RUN_TYPE" in
-            bypass) rm -f files/usr/sbin/dns-hijack;;
             full)
               if [ "$WITH_ADGH" != "true" ]; then
                 rm -rf files/etc/adguardhome

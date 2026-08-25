@@ -414,7 +414,7 @@ $IP_FORWARD_LN
 $DHCP_COMMON_BLK
 EOT
         if [ "$NO_ADGH" = "1" ]; then
-            # ADGH 关闭：dnsmasq 占 :53
+            # ADGH 关闭：dnsmasq :53 兜底直连上游（:53 为统一常驻端口，无需让出）
             if [ "$WITH_OC" = "1" ]; then
                 # OC 开：dnsmasq 上游指向 OC redir-host(:7874) + 阿里云兜底，OC 停时仍解析
                 cat >> "$OUT" <<EOT

@@ -22,4 +22,4 @@
 ## 注意
 - 原始二进制（如 OpenClash 的 clash_meta 核心、AdGuardHome 可执行文件）不是 `.apk`，
   应直接放进对应核心的 `files/<core>/`（编译进镜像），而不是本目录。
-- fwx 应用过滤栈：`kmod-fwx` 由 build.sh 构建期按钉死 SHA 从 upstream 动态拉取（不 vendored 进仓库）；`fwxd`/`libfwx_common` 由本地 vendored feed `feeds/fwx/` 提供；15 个 `luci-app-fwx-*` 界面包通过 `feeds/25.12.conf` 中的 `src-git fwxluci` 跟随上游。三者均随固件编译进镜像，无需放这里。若拿到自编译 / 手动上传的可信 `.apk`（含 `kmod-fwx*.apk`），放这里即可在首启离线安装。
+- fwx 应用过滤栈：`kmod-fwx` 由 build.sh 构建期按钉死 SHA 从 upstream 动态拉取（不 vendored 进仓库）；`fwxd`/`libfwx_common` 由本地 vendored feed `feeds/fwx/` 提供；14 个 `luci-app-fwx-*` 界面包通过 `feeds/25.12.conf` 中的 `src-git fwxluci` 跟随上游。三者均随固件编译进镜像，无需放这里。若拿到自编译 / 手动上传的可信 `.apk`（含 `kmod-fwx*.apk`），放这里即可在首启离线安装。
