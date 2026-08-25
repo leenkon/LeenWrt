@@ -6,13 +6,13 @@ http:
     enabled: false
     port: 6060
 dns:
-  port: 53
+  port: 5353
   bind_hosts:
     - 0.0.0.0
     - "::"
   upstream_dns:
     - "127.0.0.1:7874"        # 主上游：OpenClash（域名分流/代理）。OC 停止/崩溃时 ADGH 自动跳过，改走下一条
-    - "127.0.0.1:5453"        # 兜底（不依赖 OC）：本地 dnsmasq，纯阿里云 DNS 223.5.5.5/223.6.6.6（明文）；OC 挂了也不影响普通解析
+    - "127.0.0.1:53"          # 兜底（不依赖 OC）：本地 dnsmasq :53（常驻兜底），纯阿里云 DNS 223.5.5.5/223.6.6.6（明文）；OC 挂了也不影响普通解析
   fallback_dns: []            # 兜底已并入 upstream_dns 第二条起，避免双路径重复
   parallel_requests: false    # 先走 OC；OC 不可达才顺序尝试直连兜底（保证 OC 在时由其做域名分流，不泄漏）
   upstream_timeout: 3s

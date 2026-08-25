@@ -80,7 +80,7 @@ else
 fi
 NO_ADGH="false"; [ "$WITH_ADGH" = "false" ] && NO_ADGH="true"
 
-# DNS 劫持开关（默认开启；完整路由关闭时改用 firewall REJECT 强制走路由器 DNS）。旁路由不劫持故忽略。
+# DNS 劫持开关（默认开启；完整路由关闭时移除 dns-hijack、改 REJECT 强制走路由器 DNS）。旁路由固定开启，复用同一零抖动拓扑。
 WITH_DNS_HIJACK="true"
 if [[ "$RUN_TYPE" == "full" ]]; then
   read -p "启用 DNS 劫持(关闭则 REJECT 强制路由器 DNS)? [Y/n]: " dh
@@ -339,11 +339,9 @@ else
   echo "[build] 警告: apps/ 下无 .apk，自定义离线包将不会随固件安装"
 fi
 
-# 文件清理：按勾选删除不需要的静态文件（在 openwrt 副本上操作，不修改源树）
+# 文件清理：按勾选删除不需要的静态文件（在 openwrt 副本上操作，不修改源树）。
+# 旁路由固定 ADGH+OC 且劫持恒开启，dns-hijack 保留，与主路由走同一「dnsmasq :53 兜底 + ADGH :5353 + 重定向」零抖动拓扑。
 case "$RUN_TYPE" in
-  bypass)
-    rm -f "$OPENWRT_DIR/files/usr/sbin/dns-hijack"
-    ;;
   full)
     # 未勾选 AdGuardHome：清理 ADGH 静态文件
     if [ "$WITH_ADGH" = "false" ]; then

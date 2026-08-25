@@ -375,10 +375,10 @@ uci commit network
 
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
-uci -q set dhcp.@dnsmasq[0].port='5453'
+uci -q delete dhcp.@dnsmasq[0].port
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
-# 旁路由 dnsmasq 仅作 ADGH 兜底(:5453)，noresolv=1 不读空 resolv.conf。
+# 旁路由 dnsmasq 常驻 :53 兜底(零抖动)；ADGH 改绑 :5353，不再让出 :53。
 uci -q delete dhcp.@dnsmasq[0].server
 uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
@@ -440,9 +440,9 @@ uci commit dhcp
 EOT
             fi
         else
-            # 带 ADGH：dnsmasq 让出 :53(port 5453)，AdGuardHome 占 :53，纯阿里云兜底
+            # 带 ADGH：dnsmasq 常驻 :53 兜底，AdGuardHome 占 :5353，纯阿里云兜底
             cat >> "$OUT" <<EOT
-uci -q set dhcp.@dnsmasq[0].port='5453'
+uci -q delete dhcp.@dnsmasq[0].port
 uci -q delete dhcp.@dnsmasq[0].server
 uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
@@ -465,7 +465,7 @@ EOT
             cat >> "$OUT" <<EOT
 $ADGH_ENABLE_BLK
 EOT
-            # 劫持绑定到 ADGH 生命周期：adguardhome init.d 在 ADGH 监听 :53 后布表、停时清表，
+            # 劫持绑定到 ADGH 生命周期：adguardhome init.d 监控循环在 ADGH 监听 :5353 后布表、停时清表，
             # 不再注册独立 firewall include。dns_hijack 选项写入 adguardhome config，
             # 在 99-custom.sh(设备首启)执行——构建机无 uci。dns_hijack=0 时改用 REJECT 强制走路由器 DNS。
             cat >> "$OUT" <<EOT

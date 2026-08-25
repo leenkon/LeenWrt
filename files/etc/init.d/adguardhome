@@ -15,14 +15,10 @@ boot() {
 	start "$@"
 }
 
-# 统一设置 dnsmasq 端口：ADGH 模式让出 :53 退居 :5453，传空则复位 :53(保留构建期上游 server)。
+# dnsmasq 常驻 :53 作兜底(零抖动)：ADGH 宕则清劫持表、LAN 直落 dnsmasq :53 不掉网。
+# 不再让出 :53——ADGH 改绑 :5353，故 dnsmasq 永占 :53（保留构建期上游 server）。
 setup_dnsmasq() {
-	local port="$1"
-	if [ -n "$port" ]; then
-		uci -q set dhcp.@dnsmasq[0].port="$port"
-	else
-		uci -q delete dhcp.@dnsmasq[0].port
-	fi
+	uci -q delete dhcp.@dnsmasq[0].port
 	uci set dhcp.@dnsmasq[0].noresolv='1'
 	uci set dhcp.@dnsmasq[0].dns_redirect='0'
 	uci commit dhcp
@@ -45,8 +41,8 @@ start_service() {
 		return 1
 	fi
 
-	# ADGH 拉起前让 dnsmasq 回 :5453，避免 stop->restart 抢 :53
-	setup_dnsmasq 5453
+	# dnsmasq 常驻 :53 兜底（ADGH 改绑 :5353，不再让出 :53）
+	setup_dnsmasq
 
 	mkdir -m 0700 -p /var/lib/adguardhome
 
@@ -61,26 +57,19 @@ start_service() {
 	procd_set_param respawn
 	procd_close_instance
 
-	# 劫持绑定 ADGH 生命周期：监听 :53 后布表；停时清表(stop_service)。dns_hijack=0 不劫持。
+	# 劫持监控循环(零抖动)：ADGH :5353 监听即布表强制过滤，失联即清表回退 dnsmasq :53。
+	# 与 ADGH(:5353)/dnsmasq(:53) 不同端口，清表不抢端口，故可安全周期运行(无 flap)。
 	local dhijack
 	config_get_bool dhijack config dns_hijack 1
 	if [ "$dhijack" = "1" ] && [ -x /usr/sbin/dns-hijack ]; then
-		( local i
-		  for i in $(seq 1 20); do
-			if ss -lun 2>/dev/null | grep -q ':53 ' || netstat -lun 2>/dev/null | grep -q ':53 '; then
-				chmod 755 /usr/sbin/dns-hijack
-				/usr/sbin/dns-hijack
-				logger -t adguardhome "ADGH 已监听 :53，已布 DNS 劫持"
-				break
-			fi
-			sleep 1
-		  done ) &
+		pkill -f "/usr/sbin/dns-hijack" 2>/dev/null   # 防重复循环
+		( while true; do /usr/sbin/dns-hijack; sleep 5; done ) &
 	fi
 }
 
-# ADGH 停止/卸载立即自愈：清劫持表 + 复位 dnsmasq :53。
-# LeenWrt 的 dnsmasq 在 ADGH 模式占 :5453，仅清表(LeenWrt2 做法)会致 :53 无监听断网，故额外复位。
+# ADGH 停止/卸载立即自愈：停监控循环 + 清劫持表(回退 dnsmasq :53，零抖动)。
 stop_service() {
+	pkill -f "/usr/sbin/dns-hijack" 2>/dev/null   # 停监控循环及任何残留 dns-hijack 调用
 	nft delete table inet dns_hijack 2>/dev/null
 	setup_dnsmasq
 	logger -t adguardhome "ADGH 停止/卸载：已清除劫持并回退 dnsmasq :53（自愈防断网）"
