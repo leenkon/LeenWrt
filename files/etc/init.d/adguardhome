@@ -1,9 +1,7 @@
 #!/bin/sh /etc/rc.common
-#
 # AdGuardHome 启动脚本（官方预编译二进制方案）
 # 取代 feeds 包的 init：以 root 运行（绑定 53 需特权），无需 capabilities jail。
 # 配置复用 files/etc/adguardhome/adguardhome.yaml，运行时数据放在 /var/lib/adguardhome。
-
 START=19
 STOP=89
 USE_PROCD=1

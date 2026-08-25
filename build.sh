@@ -1,16 +1,11 @@
 #!/bin/bash
-# LeenWrt 本地编译脚本（Debian/Ubuntu）
-# 单核心由 cores/<core>.conf 驱动：leenwrt(fork 自 immortalwrt 上游, OC/ADGH 全功能, 可选 fwx 应用过滤)。
-# 用法: chmod +x build.sh && ./build.sh
-
+# LeenWrt 本地编译脚本（Debian/Ubuntu）；单核心 leenwrt 由 cores/<core>.conf 驱动（fork 自 immortalwrt，OC/ADGH 全功能，可选 fwx）。
 set -e
 
-# 颜色定义
 RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' NC='\033[0m'
 error_exit() { echo -e "${RED}错误：$1${NC}" >&2; exit 1; }
 success() { echo -e "${GREEN}[OK] $1${NC}"; }
 
-# 默认配置
 DEF_MAIN_IP="10.10.10.1"
 DEF_BYPASS_IP="10.10.10.2"
 DEF_GATEWAY="10.10.10.1"
@@ -136,7 +131,6 @@ find "$SCRIPT_DIR/scripts" "$SCRIPT_DIR/$FILES_DIR" -type f \
 chmod +x "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
 success "完成"
 
-# 2. 依赖
 echo -e "\n${YELLOW}[2/7] 安装依赖...${NC}"
 sudo apt update -y
 sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
@@ -149,7 +143,6 @@ python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig ug
 upx-ucl unzip vim wget xmlto xxd zlib1g-dev
 success "完成"
 
-# 3. 源码
 echo -e "\n${YELLOW}[3/7] 拉取源码...${NC}"
 # 取源引用：leenwrt 用上游 tag（v${VERSION}）克隆检出
 SRC_REF="${REF_PREFIX}${VERSION}"
@@ -216,7 +209,6 @@ fi
 # 3.6 fanchmwrt 系统主题动态拉取（默认主题 fanchmwrt，bootstrap 作基础）
 pull_fcm_package "$THEME_UPSTREAM_PATH" "$SCRIPT_DIR/feeds/fwx/luci-theme-fanchmwrt" "$SCRIPT_DIR/feeds/fwx/luci-theme-fanchmwrt/.theme_commit" "$THEME_COMMIT" "luci-theme-fanchmwrt"
 
-# 4. 配置
 echo -e "\n${YELLOW}[4/7] 准备配置...${NC}"
 cd "$OPENWRT_DIR"
 "$DIY" -v "$MAIN_VER" -p before -t "$RUN_TYPE" --feeds "$FEEDS_FILE_ABS" ${FWX_FLAG}
@@ -298,7 +290,6 @@ _inject_pkg_list() {
 
 success "完成"
 
-# 5. 网络配置
 echo -e "\n${YELLOW}[5/7] 生成网络配置...${NC}"
 # --no-adgh 仅在 NO_ADGH=true 时传入（Full 未勾选 AdGuardHome 时）
 NOADGH_ARG=""
@@ -312,7 +303,6 @@ NOADGH_ARG=""
   --root-pass "$ROOT_PWD"
 success "完成"
 
-# 6. 预装核心 + 打包 files
 echo -e "\n${YELLOW}[6/7] 预装核心与打包文件...${NC}"
 # OpenClash Meta 核心预装（仅 Mini 旁路由 / Full 勾选 OC 时）
 if [[ "$WITH_OC" == "true" ]]; then
@@ -365,7 +355,6 @@ find "$OPENWRT_DIR/files" -type f \( -path "*/sbin/*" -o -path "*/init.d/*" -o -
 make defconfig && make download && make clean
 success "完成"
 
-# 7. 编译
 echo -e "\n${YELLOW}[7/7] 编译固件...${NC}"
 make -j$(nproc) || make -j1 V=s
 

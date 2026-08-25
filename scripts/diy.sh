@@ -220,10 +220,9 @@ after)
     log_server_esc=$(_escape_uci "$LOG_SERVER")
 
     # ===== 公共配置块（各 profile 按需引用） =====
-    # IP 转发开关：所有 profile 统一开启
     IP_FORWARD_LN='grep -q '\''net.ipv4.ip_forward=1'\'' /etc/sysctl.conf || echo '\''net.ipv4.ip_forward=1'\'' >> /etc/sysctl.conf'
 
-    # full 共用：LAN 静态地址（lan6 删除、ip6assign、proto、ipaddr、netmask）
+    # full 共用：LAN 静态地址
     LAN_WAN_COMMON_BLK=$(cat <<EOF
 uci -q delete network.lan6
 uci set network.lan.ip6assign='64'

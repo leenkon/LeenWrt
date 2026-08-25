@@ -1,10 +1,6 @@
 #!/bin/bash
-# OpenClash LuCI 插件升级脚本
-# 从 vernesong/OpenClash GitHub 最新 master 替换 feeds 中的 luci-app-openclash
-#
-# 执行时机: feeds update -a 之后、feeds install -a 之前
-# 原理: 删除 feeds 中的 openclash 源码，克隆官方仓库到 package/
-
+# OpenClash LuCI 插件升级脚本：从 vernesong/OpenClash 最新 master 替换 feeds 中的 luci-app-openclash
+# 执行时机: feeds update -a 之后、feeds install -a 之前（删除 feeds 源码，克隆官方仓库到 package/）
 set -e
 
 OPENWRT_DIR="${1:-.}"
