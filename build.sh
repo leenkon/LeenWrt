@@ -218,8 +218,10 @@ if [[ "$WITH_FWX" = "true" ]]; then
   pull_fcm_package "$FCM_BASE/libfwx_common" "$SCRIPT_DIR/feeds/fwx/libfwx_common" "$SCRIPT_DIR/feeds/fwx/libfwx_common/.libfwx_common_commit" "$FWX_COMMIT" "libfwx_common"
 fi
 
-# 3.6 fanchmwrt 系统主题动态拉取（默认主题 fanchmwrt，bootstrap 作基础）
-pull_fcm_package "$THEME_UPSTREAM_PATH" "$SCRIPT_DIR/feeds/fwx/luci-theme-fanchmwrt" "$SCRIPT_DIR/feeds/fwx/luci-theme-fanchmwrt/.theme_commit" "$THEME_COMMIT" "luci-theme-fanchmwrt"
+# 3.6 fanchmwrt 系统主题仅 fwx 开启时拉取（关 fwx 不需要此主题，默认 argon；主题随 fwx 核心同步一并拉取）
+if [[ "$WITH_FWX" = "true" ]]; then
+  pull_fcm_package "$THEME_UPSTREAM_PATH" "$SCRIPT_DIR/feeds/fwx/luci-theme-fanchmwrt" "$SCRIPT_DIR/feeds/fwx/luci-theme-fanchmwrt/.theme_commit" "$THEME_COMMIT" "luci-theme-fanchmwrt"
+fi
 
 echo -e "\n${YELLOW}[4/7] 准备配置...${NC}"
 cd "$OPENWRT_DIR"
@@ -255,6 +257,11 @@ fi
 # leenwrt：直接套用本地 .config 种子（configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config）
 cp "$SCRIPT_DIR/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在: configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config"
 sed -i 's/\r$//' .config
+# 关 fwx：移除 fanchmwrt 主题并默认 argon（fwx 关闭时该主题无意义，argon 作默认，无需拉取主题）
+if [[ "$WITH_FWX" != "true" ]]; then
+  sed -i '/^CONFIG_PACKAGE_luci-theme-fanchmwrt=/d' .config
+  sed -i 's/^CONFIG_LUCI_DEFAULT_THEME=.*/CONFIG_LUCI_DEFAULT_THEME="argon"/' .config
+fi
 # 勾选 fwx 时把应用过滤栈追加进 .config（清单单一来源：feeds/fwx/fwx-packages.list）
 if [[ "$WITH_FWX" = "true" ]]; then
   FWX_LIST="$SCRIPT_DIR/feeds/fwx/fwx-packages.list"
