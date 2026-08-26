@@ -1,7 +1,8 @@
 #!/bin/sh
 # DNS 劫持(绑定 ADGH 生命周期)：LAN 明文 :53 重定向到本机 ADGH(:5353)，dnsmasq 常驻 :53 作兜底。
 # ADGH 宕则清表、LAN 直落 dnsmasq :53(掉过滤但不掉网，零抖动)；由 adguardhome init.d 监控循环调用。
-# priority -150 早于 firewall4 dstnat(-100)；旁路由 IP 由 lan.ipaddr 末段推 .2 放行自身查询避免环路。
+# priority -150 早于 firewall4 dstnat(-100)；dns_hijack_bypass_ip 为空=全量劫持(旁路由/单路由，自动适应IP变更)；主路由双路由填对端旁路由IP，据此排除避免二次劫持。
+# 依赖：ADGH 须 bind 0.0.0.0:5353（见 adguardhome.yaml bind_hosts），否则重定向到 lan_ip:5353 无法命中仅绑 127.0.0.1 的 socket。
 if ! command -v nft >/dev/null 2>&1; then
     logger -t dns-hijack "ERROR: nft not found"
     exit 0
@@ -32,19 +33,18 @@ nft add table inet dns_hijack
 nft add chain inet dns_hijack prerouting '{ type nat hook prerouting priority -150; }'
 
 LAN_IP=$(uci -q get network.lan.ipaddr 2>/dev/null)
-BYPASS_IP=""
-[ -n "$LAN_IP" ] && BYPASS_IP=$(echo "$LAN_IP" | sed 's/\.[0-9]*$/.2/')
+BYPASS_IP=$(uci -q get adguardhome.config.dns_hijack_bypass_ip 2>/dev/null)
 
 if [ -n "$BYPASS_IP" ] && [ "$BYPASS_IP" != "$LAN_IP" ]; then
-    # 双路由部署：放行旁路由自身查询，其余重定向到本机 :5353(ADGH)
+    # 主路由双路由：排除对端旁路由 IP，避免其查询被二次劫持
     nft add rule inet dns_hijack prerouting ip saddr != $BYPASS_IP udp dport 53 redirect to :5353
     nft add rule inet dns_hijack prerouting ip saddr != $BYPASS_IP tcp dport 53 redirect to :5353
-    logger -t dns-hijack "nftables DNS hijack applied (bypass: $BYPASS_IP)"
+    logger -t dns-hijack "nftables DNS hijack applied (main router, exclude bypass: $BYPASS_IP)"
 else
-    # 单路由：IPv4 全量劫持
+    # 旁路由/单路由(无排除项)：IPv4 全量劫持
     nft add rule inet dns_hijack prerouting udp dport 53 redirect to :5353
     nft add rule inet dns_hijack prerouting tcp dport 53 redirect to :5353
-    logger -t dns-hijack "nftables DNS hijack applied (single router, no bypass)"
+    logger -t dns-hijack "nftables DNS hijack applied (all IPv4, no exclusion)"
 fi
 
 # IPv6 明文 DNS 一并重定向(旁路由多为 IPv4，不作排除)

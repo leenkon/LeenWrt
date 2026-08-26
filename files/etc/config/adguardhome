@@ -1,3 +1,4 @@
 config adguardhome config
 	option enabled '1'
 	option dns_hijack '1'
+	option dns_hijack_bypass_ip ''

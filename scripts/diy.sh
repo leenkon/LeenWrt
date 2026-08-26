@@ -66,6 +66,7 @@ done
 case "$PROFILE_TYPE" in ""|bypass|full) ;; *) error_exit "--type 仅支持 bypass / full" ;; esac
 
 if [ "$PROFILE_TYPE" = "bypass" ]; then
+    # 旁路由：--ip=本机LAN IP(默认10.10.10.2)，--gateway=上游主路由(默认10.10.10.1)；IP取LAN IP，运行期全量劫持
     [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_BYPASS_IP"
     [ -z "$CUSTOM_GATEWAY" ] && CUSTOM_GATEWAY="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法旁路由IP: $CUSTOM_IP"
@@ -74,6 +75,8 @@ if [ "$PROFILE_TYPE" = "bypass" ]; then
 elif [ "$PROFILE_TYPE" = "full" ]; then
     [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法路由IP: $CUSTOM_IP"
+    # 主路由：--gateway 可选，双路由填旁路由 IP，单路由留空
+    [ -n "$CUSTOM_GATEWAY" ] && { is_valid_ipv4 "$CUSTOM_GATEWAY" || error_exit "非法旁路由IP: $CUSTOM_GATEWAY"; }
 fi
 
 if [ -n "$PPPOE_USERNAME" ] || [ -n "$PPPOE_PASSWORD" ]; then
@@ -253,9 +256,20 @@ chmod 755 /etc/init.d/adguardhome
 EOF
 )
 
-    # full 共用：不劫持时改用 firewall REJECT lan->wan :53，强制走路由器 DNS(DHCP option 6 已公告)；排除旁路由自身
+    # 主路由双路由：--gateway=旁路由IP，写入 adguardhome config 供 dns-hijack 排除(防二次劫持)；单路由留空=全量劫持。
+    # 旁路由自身不写该项(保持空)：dns-hijack 空值即全量劫持，自动适应旁路由 LAN IP 后期变更，无需固化。
+    BYPASS_IP=""
+    [ "$PROFILE_TYPE" = "full" ] && BYPASS_IP="$CUSTOM_GATEWAY"
+    BYPASS_IP_UCI_BLK=""
+    [ -n "$BYPASS_IP" ] && BYPASS_IP_UCI_BLK=$(cat <<EOF
+uci -q delete adguardhome.config.dns_hijack_bypass_ip
+uci set adguardhome.config.dns_hijack_bypass_ip='$(_escape_uci "$BYPASS_IP")'
+EOF
+)
+
+    # 不劫持时 REJECT lan->wan :53 强制走路由器 DNS(排除旁路由自身)
     DNS_HIJACK_REJECT_BLK=$(cat <<'EOF'
-BYPASS_IP=$(uci -q get network.lan.ipaddr 2>/dev/null | sed 's/\.[0-9]*$/.2/')
+BYPASS_IP=$(uci -q get adguardhome.config.dns_hijack_bypass_ip 2>/dev/null)
 for _z in wan wan6; do
     uci -q get firewall.$_z >/dev/null 2>&1 || continue
     uci -q delete firewall.reject_lan_dns_$_z
@@ -375,6 +389,10 @@ uci commit firewall
 
 $OC_CONFIG_BLK
 $ADGH_ENABLE_BLK
+uci -q delete adguardhome.config.dns_hijack
+uci set adguardhome.config.dns_hijack='$WITH_DNS_HIJACK'
+$BYPASS_IP_UCI_BLK
+uci commit adguardhome
 EOT
     elif [ "$PROFILE_TYPE" = "full" ]; then
         cat >> "$OUT" <<EOT
@@ -385,8 +403,7 @@ $IP_FORWARD_LN
 
 $DHCP_COMMON_BLK
 EOT
-        # 零抖动 DNS 拓扑：dnsmasq 常驻 :53 兜底；ADGH(:5353)/OC(:7874) 按需叠加。
-        # 仅 "ADGH 关 + OC 开" 时 dnsmasq 上游前置 OC redir-host(:7874)，其余直连上游 DNS。
+        # 零抖动 DNS：dnsmasq 常驻 :53 兜底；ADGH(:5353)/OC(:7874) 按需叠加。仅"ADGH关+OC开"时 dnsmasq 上游前置 OC(:7874)
         DNS_SERVERS="$DNS_MAIN $DNS_BACKUP"
         [ "$NO_ADGH" = "1" ] && [ "$WITH_OC" = "1" ] && DNS_SERVERS="127.0.0.1#7874 $DNS_MAIN $DNS_BACKUP"
         {
@@ -412,12 +429,11 @@ EOT
             cat >> "$OUT" <<EOT
 $ADGH_ENABLE_BLK
 EOT
-            # 劫持绑定到 ADGH 生命周期：adguardhome init.d 监控循环在 ADGH 监听 :5353 后布表、停时清表，
-            # 不再注册独立 firewall include。dns_hijack 选项写入 adguardhome config，
-            # 在 99-custom.sh(设备首启)执行——构建机无 uci。dns_hijack=0 时改用 REJECT 强制走路由器 DNS。
+            # dns_hijack 写入 adguardhome config，由 init.d 监控循环在 ADGH 监听:5353 后布表/停时清表(零抖动)；=0 时改用 REJECT 强制走路由器 DNS
             cat >> "$OUT" <<EOT
 uci -q delete adguardhome.config.dns_hijack
 uci set adguardhome.config.dns_hijack='$WITH_DNS_HIJACK'
+$BYPASS_IP_UCI_BLK
 uci commit adguardhome
 EOT
             if [ "$WITH_DNS_HIJACK" != "1" ]; then

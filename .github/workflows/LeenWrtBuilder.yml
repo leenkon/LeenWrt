@@ -7,7 +7,7 @@ on:
       version: {description: '版本', required: true, type: choice, options: ['25.12.1', '25.12.0'], default: '25.12.1'}
       profile: {description: 'Full=主路由 / Mini=旁路由', required: true, type: choice, options: [Full, Mini], default: 'Full'}
       custom_ip: {description: '自定义IP', type: string, default: ''}
-      custom_gateway: {description: '旁路由网关', type: string, default: ''}
+      custom_gateway: {description: '旁路由网关IP(Mini=上游主路由; Full=双路由部署填旁路由IP,留空=单路由)', type: string, default: ''}
       pppoe_username: {description: 'PPPoE账号', type: string, default: ''}
       pppoe_password: {description: 'PPPoE密码', type: string, default: ''}
       with_fwx: {description: 'fwx应用过滤', type: boolean, default: true}

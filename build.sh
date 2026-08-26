@@ -57,9 +57,17 @@ read -p "自定义LAN IP [默认: $DEF_IP，回车跳过]: " custom_ip
 ROUTER_IP="${custom_ip:-$DEF_IP}"
 success "LAN IP: $ROUTER_IP"
 
-# 网关(仅旁路由)
+# 网关：旁路由(Mini)=上游主路由(默认 10.10.10.1)；完整路由(Full)=双路由部署填旁路由 IP(自定义网关=旁路由IP)，单路由留空
 GATEWAY_IP=""
-[[ "$RUN_TYPE" == "bypass" ]] && { read -p "网关IP [默认: $DEF_GATEWAY]: " gw; GATEWAY_IP="${gw:-$DEF_GATEWAY}"; success "网关: $GATEWAY_IP"; }
+if [[ "$RUN_TYPE" == "bypass" ]]; then
+  read -p "网关IP(上游主路由) [默认: $DEF_GATEWAY]: " gw
+  GATEWAY_IP="${gw:-$DEF_GATEWAY}"
+  success "网关(上游主路由): $GATEWAY_IP"
+else
+  read -p "双路由部署填旁路由网关IP(自定义网关=旁路由IP) [单路由留空，回车跳过]: " gw
+  GATEWAY_IP="${gw:-}"
+  [ -n "$GATEWAY_IP" ] && success "旁路由 IP: $GATEWAY_IP" || success "单路由（不指定旁路由 IP）"
+fi
 
 # PPPoE (完整路由)
 PPPOE_USER="" PPPOE_PASS=""
