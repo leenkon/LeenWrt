@@ -106,12 +106,11 @@ before)
     if [ "$WITH_FWX" = "1" ]; then
         FWX_KERN_PATCH="$PROJECT_ROOT/patches/fwx/950-fwx-nf-conn-struct-user-hook.patch"
         if [ -f "$FWX_KERN_PATCH" ]; then
-            # 950 针对 6.12 系列内核：早期仅做系列拦截(前缀匹配)，不对齐则 fail-fast（避免编译通过但首启卡死）
-            # 版本定义在 target/linux/generic/kernel-6.12 的 LINUX_KERNEL_HASH-6.12.xx 行（完整点版本 6.12.xx）
+            # 950 针对 6.12 系列：早期仅按 FWX_KERNEL_BASELINE 前缀拦截(跨系列如 6.13 才 fail-fast)；
+            # 真正能否打入由下方 patch --dry-run 权威判定(干净/ fuzz 告警/ 失败报错)。
+            # 版本取自 target/linux/generic/kernel-6.12 的 LINUX_KERNEL_HASH-6.12.xx 行。
             FWX_KERN_VER=$(grep -m1 '^LINUX_KERNEL_HASH-6\.12\.' target/linux/generic/kernel-6.12 2>/dev/null | grep -oE '6\.12\.[0-9]+' 2>/dev/null || true)
             echo "[diy] immortalwrt 内核版本: ${FWX_KERN_VER:-未知} (950 针对 6.12 系列，系列内任意子版本均可尝试打入)"
-            # FWX_KERNEL_BASELINE 用作前缀匹配(系列拦截，非精确点版本)：950 针对 6.12 系列，任意 6.12.x(含未来升号)均放行；
-            # 仅跨系列(如 6.13)才 fail-fast。真正能否打入由下方 patch --dry-run 权威判定(干净/ fuzz 告警/ 失败报错)。
             FWX_KERNEL_BASELINE=$(grep -m1 '^FWX_KERNEL_BASELINE=' "$PROJECT_ROOT/cores/leenwrt.conf" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)
             if [ -n "$FWX_KERNEL_BASELINE" ] && [ -n "$FWX_KERN_VER" ]; then
                 FWX_BASE_OK=0

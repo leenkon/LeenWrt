@@ -107,7 +107,7 @@ else
   echo "WARN: 未拉取到主题源文件，跳过主题同步"
 fi
 
-# 3c) 同步其余 fwx 核心组件（fwxd + libfwx_common），均为 luci-app-fwx-* 必需依赖
+# 3c) 同步其余 fwx 核心组件（fwxd + libfwx_common）
 _sync_component fwxd
 _sync_component libfwx_common
 
