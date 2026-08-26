@@ -122,11 +122,8 @@ jobs:
           ./scripts/feeds install -a -f
           cp $GITHUB_WORKSPACE/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config .config
           sed -i 's/\r$//' .config
-          # 关 fwx：移除 fanchmwrt 主题并默认 argon（与 build.sh 一致；fwx 关闭时该主题无意义）
-          if [ "$WITH_FWX" != "true" ]; then
-            sed -i '/^CONFIG_PACKAGE_luci-theme-fanchmwrt=/d' .config
-            sed -i 's/^CONFIG_LUCI_DEFAULT_THEME=.*/CONFIG_LUCI_DEFAULT_THEME="argon"/' .config
-          fi
+          # 主题默认按 WITH_FWX 由 diy.sh config 阶段追加（关 fwx=argon；开 fwx=fanchmwrt）；seed .config 不再写死
+          $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p config -t $RUN_TYPE $FWX_FLAG
 
           # fwx 应用过滤（可选）：kmod-fwx 由 sync-fwx.sh 在构建前按 FWX_COMMIT 动态拉取；14 个 luci-app-fwx-* 经 src-git fwxluci
           if $WITH_FWX; then

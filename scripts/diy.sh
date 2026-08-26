@@ -217,6 +217,26 @@ for theme in ('argon', 'bootstrap'):
 PY
     ;;
 
+config)
+    # .config 主题注入：基础主题(argon/bootstrap)已固化在 seed .config；fwx 相关主题(fanchmwrt)与默认主题
+    # 不写死在 seed，按 WITH_FWX 在此追加（开 fwx=fanchmwrt+默认 fanchmwrt；关 fwx=仅默认 argon）。
+    echo "[diy] config: 注入默认主题(CONFIG_LUCI_DEFAULT_THEME，按 WITH_FWX)"
+    CONFIG_FILE=".config"
+    [ -f "$CONFIG_FILE" ] || error_exit "缺失 $CONFIG_FILE（config 阶段须在 .config 复制后调用）"
+    # 确保末尾有换行（seed .config 末行可能无换行，避免追加内容粘连上一行）
+    [ -n "$(tail -c1 "$CONFIG_FILE" 2>/dev/null)" ] && printf '\n' >> "$CONFIG_FILE"
+    # 去重：移除任何已存在的默认主题行（seed 不再含此行，此处兜底）
+    sed -i '/^CONFIG_LUCI_DEFAULT_THEME=/d' "$CONFIG_FILE"
+    if [ "$WITH_FWX" = "1" ]; then
+        grep -q '^CONFIG_PACKAGE_luci-theme-fanchmwrt=' "$CONFIG_FILE" || echo 'CONFIG_PACKAGE_luci-theme-fanchmwrt=y' >> "$CONFIG_FILE"
+        echo 'CONFIG_LUCI_DEFAULT_THEME="fanchmwrt"' >> "$CONFIG_FILE"
+        echo "[diy] 已追加 luci-theme-fanchmwrt（默认 fanchmwrt）"
+    else
+        echo 'CONFIG_LUCI_DEFAULT_THEME="argon"' >> "$CONFIG_FILE"
+        echo "[diy] 已设默认主题 argon（关 fwx，不引入 fanchmwrt）"
+    fi
+    ;;
+
 after)
     echo "[diy] after: $PROFILE_TYPE"
     case "$FILES_DIR_NAME" in
@@ -515,7 +535,7 @@ EOT
         chmod 600 "$SHADOW" 2>/dev/null || true
     fi
     ;;
-*) error_exit "PHASE仅支持 before / themes / ruby / after" ;;
+*) error_exit "PHASE仅支持 before / config / themes / ruby / after" ;;
 esac
 
 echo "[diy] done: $PHASE ${PROFILE_TYPE:-N/A}"

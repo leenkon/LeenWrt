@@ -257,11 +257,8 @@ fi
 # leenwrt：直接套用本地 .config 种子（configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config）
 cp "$SCRIPT_DIR/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config" .config || error_exit "配置文件不存在: configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config"
 sed -i 's/\r$//' .config
-# 关 fwx：移除 fanchmwrt 主题并默认 argon（fwx 关闭时该主题无意义，argon 作默认，无需拉取主题）
-if [[ "$WITH_FWX" != "true" ]]; then
-  sed -i '/^CONFIG_PACKAGE_luci-theme-fanchmwrt=/d' .config
-  sed -i 's/^CONFIG_LUCI_DEFAULT_THEME=.*/CONFIG_LUCI_DEFAULT_THEME="argon"/' .config
-fi
+# 主题默认按 WITH_FWX 由 diy.sh config 阶段追加（关 fwx=argon；开 fwx=fanchmwrt）；seed .config 不再写死主题，单一来源在 diy
+"$DIY" -v "$MAIN_VER" -p config -t "$RUN_TYPE" ${FWX_FLAG}
 # 勾选 fwx 时把应用过滤栈追加进 .config（清单单一来源：feeds/fwx/fwx-packages.list）
 if [[ "$WITH_FWX" = "true" ]]; then
   FWX_LIST="$SCRIPT_DIR/feeds/fwx/fwx-packages.list"
