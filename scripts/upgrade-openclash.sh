@@ -80,26 +80,8 @@ case "$CMD" in
       echo "[ERROR] luci-app-openclash Makefile 未找到"; exit 1
     }
 
-    # 25.12 已移除 tools/po2lmo；po2lmo 现仅由 luci-base host 提供，而 OpenClash 用 package.mk
-    # 未声明对 luci-base host 的构建依赖，并行构建下可能抢跑导致 po2lmo 不在 PATH ->
-    # Build/Prepare 中裸 po2lmo 调用失败、被结尾 exit 0 吞掉 -> 无 .lmo 产出 ->
-    # install 阶段 *.*.lmo 匹配失败 -> compile 失败。
-    # 解决：主动构建 OpenClash 自带 po2lmo 并放入 host 工具链（构建期 PATH 含 staging_dir/host/bin）。
-    P2M_SRC="$OPENWRT_DIR/package/OpenClash/luci-app-openclash/tools/po2lmo"
-    if [ -f "$P2M_SRC/src/po2lmo.c" ]; then
-      echo "[OC-LUCI] 构建 OpenClash 自带 po2lmo..."
-      make -C "$P2M_SRC" CC="$(command -v gcc)" >/dev/null 2>&1 || echo "[WARN] po2lmo 构建失败（可能缺 gcc）"
-      if [ -x "$P2M_SRC/src/po2lmo" ]; then
-        mkdir -p "$OPENWRT_DIR/staging_dir/host/bin"
-        cp -f "$P2M_SRC/src/po2lmo" "$OPENWRT_DIR/staging_dir/host/bin/po2lmo"
-        [ -w /usr/bin ] && cp -f "$P2M_SRC/src/po2lmo" /usr/bin/po2lmo 2>/dev/null
-        echo "[OC-LUCI] po2lmo 已就位: $OPENWRT_DIR/staging_dir/host/bin/po2lmo"
-      else
-        echo "[WARN] po2lmo 二进制未生成，若构建期仍缺失请检查 gcc 是否安装"
-      fi
-    fi
-
-    # install 段 glob 加固：*.*.lmo(仅双点) -> *.lmo(兼容单/双点命名，避免漏装 lmo)
+    # install 段 glob 加固：*.*.lmo(仅匹配双点，如 openclash.zh-cn.lmo) -> *.lmo(兼容单/双点命名，避免漏装 i18n)。
+    # 注：po2lmo 由 luci-base 的 Host/Compile 产出到 staging_dir/host/bin（构建期 PATH 必含），无需额外构建。
     sed -i 's#\$(PKG_BUILD_DIR)/\*\.\*\.lmo#$(PKG_BUILD_DIR)/*.lmo#' \
       "$OPENWRT_DIR/package/OpenClash/luci-app-openclash/Makefile"
 
