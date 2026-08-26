@@ -90,7 +90,7 @@ if [[ "$RUN_TYPE" == "full" ]]; then
   WITH_DNS_HIJACK="true"; [[ "$dh" =~ ^[Nn]$ ]] && WITH_DNS_HIJACK="false"
 fi
 
-# fwx 应用过滤（可选，默认开启；包清单见 feeds/fwx/fwx-packages.list）。旁路由不安装 fwx（应用过滤在主路由生效，且无 fwx 页面故 mini 可用 argon 主题）
+# fwx 应用过滤（可选，默认开启；包清单见 feeds/fwx/fwx-packages.list）。旁路由不安装 fwx（应用过滤在主路由生效）
 WITH_FWX="true"
 if [[ "$RUN_TYPE" == "bypass" ]]; then
   WITH_FWX="false"
@@ -164,7 +164,7 @@ if [[ ! -d "$OPENWRT_DIR" ]]; then
 fi
 success "完成（取源引用: $SRC_REF）"
 
-# 按钉死 SHA 从 fanchmwrt/package/fcm 动态拉取包；SHA 不变则跳过(.MARKER 缓存)，失败降级/报错
+# 按钉死 SHA 动态拉取包（各组件 marker 缓存，SHA 不变则跳过），失败降级/报错
 pull_fcm_package() {
   local fcm_path="$1" local_dir="$2" marker="$3" commit="$4" label="$5"
   if [[ -z "$commit" ]]; then
@@ -209,8 +209,7 @@ for t in d.get('tree',[]):
   rm -rf "$tmp" 2>/dev/null || true
 }
 
-# 3.5 fwx 四个代码组件动态拉取（仅 --with-fwx）；950/kmod 补丁不受影响。
-# 四组件同源 package/fcm（FWX_UPSTREAM_PATH=package/fcm/fwx，取其父目录为基），钉死同一 FWX_COMMIT。
+# 3.5 动态拉取 fwx 四代码组件（仅 --with-fwx；950/kmod 补丁由 diy before 阶段单独处理），钉死同一 FWX_COMMIT
 if [[ "$WITH_FWX" = "true" ]]; then
   FCM_BASE="${FWX_UPSTREAM_PATH%/*}"
   pull_fcm_package "$FCM_BASE/fwx"           "$SCRIPT_DIR/feeds/fwx/fwx"           "$SCRIPT_DIR/feeds/fwx/fwx/.fwx_commit"           "$FWX_COMMIT" "fwx 核心"

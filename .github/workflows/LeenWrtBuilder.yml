@@ -85,7 +85,7 @@ jobs:
           NO_ADGH="false"; [ "$WITH_ADGH" = "true" ] || NO_ADGH="true"
 
           WITH_FWX=${{ github.event.inputs.with_fwx }}
-          # 旁路由(Mini)恒不装 fwx（与 build.sh 一致：无 fwx 页面，mini 用 argon 主题）
+          # 旁路由(Mini)恒不装 fwx（与 build.sh 一致）
           [[ "$RUN_TYPE" == "bypass" ]] && WITH_FWX=false
           # 显式门控：避免 ${WITH_FWX:+"--with-fwx"} 在 WITH_FWX="false" 时（非空串）误展开成 --with-fwx
           FWX_FLAG=""; [ "$WITH_FWX" = "true" ] && FWX_FLAG="--with-fwx"
@@ -125,7 +125,7 @@ jobs:
           # 主题默认按 WITH_FWX 由 diy.sh config 阶段追加（关 fwx=argon；开 fwx=fanchmwrt）；seed .config 不再写死
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p config -t $RUN_TYPE $FWX_FLAG
 
-          # fwx 应用过滤（可选）：kmod-fwx 由 sync-fwx.sh 在构建前按 FWX_COMMIT 动态拉取；14 个 luci-app-fwx-* 经 src-git fwxluci
+          # fwx 应用过滤栈（kmod-fwx 由 sync-fwx.sh 动态拉取；14 个 luci-app-fwx-* 经 src-git fwxluci）
           if $WITH_FWX; then
             FWX_LIST="$GITHUB_WORKSPACE/feeds/fwx/fwx-packages.list"
             if [ -f "$FWX_LIST" ]; then

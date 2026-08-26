@@ -66,7 +66,7 @@ done
 case "$PROFILE_TYPE" in ""|bypass|full) ;; *) error_exit "--type 仅支持 bypass / full" ;; esac
 
 if [ "$PROFILE_TYPE" = "bypass" ]; then
-    # 旁路由：--ip=本机LAN IP(默认10.10.10.2)，--gateway=上游主路由(默认10.10.10.1)；IP取LAN IP，运行期全量劫持
+    # 旁路由：--ip=本机LAN IP(默认10.10.10.2)，--gateway=上游主路由(默认10.10.10.1)
     [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_BYPASS_IP"
     [ -z "$CUSTOM_GATEWAY" ] && CUSTOM_GATEWAY="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法旁路由IP: $CUSTOM_IP"
@@ -98,16 +98,14 @@ before)
     [ -f "$FEED_CONF_SRC" ] || error_exit "缺失feed配置: $FEED_CONF_SRC"
     rm -f feeds.conf
     cp "$FEED_CONF_SRC" feeds.conf
-    # src-link 用相对路径，但 feeds update 在 openwrt TOPDIR 解析，改写为绝对路径以定位 feeds/fwx
-    # （feeds/fwx 下 fwx / fwxd / libfwx_common / luci-theme-fanchmwrt 四个代码组件均由 build.sh 按 FWX_COMMIT 动态拉取）
+    # src-link 相对路径在 openwrt TOPDIR 解析失败，改写为绝对路径以定位 feeds/fwx
     sed -i "s#\./feeds/fwx#$PROJECT_ROOT/feeds/fwx#g" feeds.conf
 
     # fwx 内核改动(kmod-fwx 硬依赖)整体受 --with-fwx 门控：不勾选时零 fwx 内核补丁，连 950 都不注入。
     if [ "$WITH_FWX" = "1" ]; then
         FWX_KERN_PATCH="$PROJECT_ROOT/patches/fwx/950-fwx-nf-conn-struct-user-hook.patch"
         if [ -f "$FWX_KERN_PATCH" ]; then
-            # 950 针对 6.12 系列：系列内任意子版本均可尝试打入；能否真正打入由下方 patch --dry-run 权威判定(干净/fuzz告警/失败报错)。
-            # 版本取自 target/linux/generic/kernel-6.12 的 LINUX_KERNEL_HASH-6.12.xx 行。
+            # 950 针对 6.12 系列(系列内任意子版本均可尝试)；版本取自 target/linux/generic/kernel-6.12 的 LINUX_KERNEL_HASH-6.12.xx
             FWX_KERN_VER=$(grep -m1 '^LINUX_KERNEL_HASH-6\.12\.' target/linux/generic/kernel-6.12 2>/dev/null | grep -oE '6\.12\.[0-9]+' 2>/dev/null || true)
             echo "[diy] immortalwrt 内核版本: ${FWX_KERN_VER:-未知} (950 针对 6.12 系列，系列内任意子版本均可尝试打入)"
             FWX_KERNEL_BASELINE=$(grep -m1 '^FWX_KERNEL_BASELINE=' "$PROJECT_ROOT/cores/leenwrt.conf" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)
@@ -144,8 +142,7 @@ before)
     ;;
 
 ruby)
-    # ruby YJIT 解耦：分支头 lang/ruby 默认 RUBY_ENABLE_YJIT=y -> 拉 rust/host -> rustc LLVM 404 构建挂。
-    # OpenClash 依赖 ruby(不可选)，故仅在 WITH_OC 时由 build.sh/workflow 调用。须 feeds update 后、install 前执行。
+    # ruby YJIT 解耦：分支头 lang/ruby 默认 RUBY_ENABLE_YJIT=y 拉起 rust/host，rustc 预编译 LLVM 404 致构建挂；OpenClash 依赖 ruby(不可选)，仅 WITH_OC 时调用
     echo "[diy] ruby: 解耦 YJIT 与 rust/host（x86_64/aarch64）"
     RUBY_DIR="$PROJECT_ROOT/openwrt/feeds/packages/lang/ruby"
     if [ -d "$RUBY_DIR" ]; then
@@ -160,8 +157,7 @@ ruby)
     ;;
 
 themes)
-    # 主题 footer 移除 + fanchmwrt 标题覆盖。须在 feeds update -a 之后运行：
-    # fanchmwrt 是 src-link 本地源（always 可用），argon/bootstrap 在 feeds/luci（src-git，update 后才存在）。
+    # 须在 feeds update -a 之后运行：fanchmwrt 是 src-link 本地源(always 可用)，argon/bootstrap 在 feeds/luci(src-git，update 后才存在)
     echo "[diy] themes: 移除各主题 footer（fanchmwrt/argon/bootstrap）"
     OPENWRT_DIR="$PROJECT_ROOT/openwrt"
     _FWX_THEME="$PROJECT_ROOT/feeds/fwx/luci-theme-fanchmwrt"
@@ -218,8 +214,7 @@ PY
     ;;
 
 config)
-    # .config 主题注入：基础主题(argon/bootstrap)已固化在 seed .config；fwx 相关主题(fanchmwrt)与默认主题
-    # 不写死在 seed，按 WITH_FWX 在此追加（开 fwx=fanchmwrt+默认 fanchmwrt；关 fwx=仅默认 argon）。
+    # .config 主题注入：seed 仅含基础主题(argon/bootstrap)；按 WITH_FWX 追加 fanchmwrt(开)与默认主题(开=fanchmwrt/关=argon)
     echo "[diy] config: 注入默认主题(CONFIG_LUCI_DEFAULT_THEME，按 WITH_FWX)"
     CONFIG_FILE=".config"
     [ -f "$CONFIG_FILE" ] || error_exit "缺失 $CONFIG_FILE（config 阶段须在 .config 复制后调用）"
