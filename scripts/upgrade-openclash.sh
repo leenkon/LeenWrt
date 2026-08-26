@@ -80,8 +80,7 @@ case "$CMD" in
       echo "[ERROR] luci-app-openclash Makefile 未找到"; exit 1
     }
 
-    # install 段 glob 加固：*.*.lmo(仅匹配双点，如 openclash.zh-cn.lmo) -> *.lmo(兼容单/双点命名，避免漏装 i18n)。
-    # 注：po2lmo 由 luci-base 的 Host/Compile 产出到 staging_dir/host/bin（构建期 PATH 必含），无需额外构建。
+    # glob 加固：*.*.lmo -> *.lmo，兼容单/双点命名避免漏装 i18n
     sed -i 's#\$(PKG_BUILD_DIR)/\*\.\*\.lmo#$(PKG_BUILD_DIR)/*.lmo#' \
       "$OPENWRT_DIR/package/OpenClash/luci-app-openclash/Makefile"
 

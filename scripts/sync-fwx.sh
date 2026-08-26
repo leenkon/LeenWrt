@@ -21,8 +21,7 @@ README="$ROOT/feeds/fwx/README.md"
 echo "== sync-fwx: 从 fanchmwrt@$BRANCH 同步 fwx 组件 =="
 
 # 通用组件同步：package/fcm/<name> -> feeds/fwx/<name>
-# 用于 fwxd / libfwx_common 等纯组件（无需 kmod 补丁 / README 特殊处理）；
-# 注意：luci-app-fwx-* 经 fwxluci 安装后依赖 fwxd + libfwx_common，二者缺一不可，否则 apk 报 "no such package"。
+# fwxd / libfwx_common 均为 luci-app-fwx-* 必需依赖，缺一不可（否则 apk: no such package）
 _sync_component() {
   local name="$1" src="package/fcm/$name" local_dir="$ROOT/feeds/fwx/$name" tmp
   tmp="$(mktemp -d)"
@@ -105,8 +104,7 @@ else
   echo "WARN: 未拉取到主题源文件，跳过主题同步"
 fi
 
-# 3c) 同步其余 fwx 核心组件（fwxd 守护进程 + libfwx_common 公共库）
-#     CI 仅走 sync-fwx.sh 拉取 fwx feed，漏拉二者会导致 luci-app-fwx-* 依赖缺失（apk: fwxd no such package）。
+# 3c) 同步其余 fwx 核心组件（fwxd + libfwx_common），均为 luci-app-fwx-* 必需依赖
 _sync_component fwxd
 _sync_component libfwx_common
 
