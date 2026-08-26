@@ -110,9 +110,17 @@ before)
             # 版本定义在 target/linux/generic/kernel-6.12 的 LINUX_KERNEL_HASH-6.12.xx 行（完整点版本 6.12.xx）
             FWX_KERN_VER=$(grep -m1 '^LINUX_KERNEL_HASH-6\.12\.' target/linux/generic/kernel-6.12 2>/dev/null | grep -oE '6\.12\.[0-9]+' 2>/dev/null || true)
             echo "[diy] immortalwrt 内核版本: ${FWX_KERN_VER:-未知} (950 补丁需与此 6.12 子版本对齐)"
+            # FWX_KERNEL_BASELINE 为空格分隔的允许列表(已知良好 6.12 子版本)，当前内核须命中其一；
+            # 950 补丁上下文位于 conntrack 子系统极稳定位置，6.12.87/6.12.94 等均可干净 apply，故用列表而非死版本。
             FWX_KERNEL_BASELINE=$(grep -m1 '^FWX_KERNEL_BASELINE=' "$PROJECT_ROOT/cores/leenwrt.conf" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)
-            if [ -n "$FWX_KERNEL_BASELINE" ] && [ -n "$FWX_KERN_VER" ] && [ "$FWX_KERN_VER" != "$FWX_KERNEL_BASELINE" ]; then
-                error_exit "950 补丁与内核版本不对齐: 当前 ${FWX_KERN_VER}, 基线 ${FWX_KERNEL_BASELINE}。请重新生成 950 或钉死 immortalwrt 内核 tag。"
+            if [ -n "$FWX_KERNEL_BASELINE" ] && [ -n "$FWX_KERN_VER" ]; then
+                FWX_BASE_OK=0
+                for v in $FWX_KERNEL_BASELINE; do
+                    [ "$FWX_KERN_VER" = "$v" ] && FWX_BASE_OK=1 && break
+                done
+                if [ "$FWX_BASE_OK" -ne 1 ]; then
+                    error_exit "950 补丁与内核版本不对齐: 当前 ${FWX_KERN_VER}, 允许基线 ${FWX_KERNEL_BASELINE}。请重新生成 950 或钉死 immortalwrt 内核 tag。"
+                fi
             fi
             KERN_TREE=$(ls -d build_dir/linux-x86_64/linux-6.12* 2>/dev/null | head -1)
             if [ -n "$KERN_TREE" ]; then
