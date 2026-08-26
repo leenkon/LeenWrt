@@ -23,7 +23,10 @@ echo "== sync-fwx: 从 fanchmwrt@$BRANCH 同步 fwx 组件 =="
 # 通用组件同步：package/fcm/<name> -> feeds/fwx/<name>
 # fwxd / libfwx_common 均为 luci-app-fwx-* 必需依赖，缺一不可（否则 apk: no such package）
 _sync_component() {
-  local name="$1" src="package/fcm/$name" local_dir="$ROOT/feeds/fwx/$name" tmp
+  local name="$1"
+  local src="package/fcm/$name"
+  local local_dir="$ROOT/feeds/fwx/$name"
+  local tmp
   tmp="$(mktemp -d)"
   mapfile -t cf < <(curl -fsSL "$API" | python3 -c "
 import sys,json
