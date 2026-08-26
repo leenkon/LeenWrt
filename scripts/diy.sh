@@ -296,6 +296,24 @@ uci commit firewall
 EOF
 )
 
+    # full 共用：LAN 区三态 ACCEPT + lan->wan forwarding + wan mtu_fix（与 bypass 分支一致）。
+    # 不依赖上游默认 firewall，避免非空配置下 lan input=REJECT 挡掉 LuCI(后台) 且无 lan->wan 转发导致不能上网。
+    LAN_FORWARD_BLK=$(cat <<'EOF'
+LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
+[ -n "$LAN_FW" ] && {
+    uci set ${LAN_FW}.input='ACCEPT'
+    uci set ${LAN_FW}.output='ACCEPT'
+    uci set ${LAN_FW}.forward='ACCEPT'
+}
+WAN_FW=$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
+[ -n "$WAN_FW" ] && uci set ${WAN_FW}.mtu_fix='1'
+while uci -q delete firewall.@forwarding[0]; do :; done
+uci add firewall forwarding
+uci set firewall.@forwarding[-1].src='lan'
+uci set firewall.@forwarding[-1].dest='wan'
+EOF
+)
+
     # full 共用：启用 UPnP/IGD 并绑 lan->wan（miniupnpd 已编入镜像）
     UPNP_BLK=$(cat <<'EOF'
 uci -q get upnpd.config >/dev/null || uci set upnpd.config=upnpd
@@ -412,6 +430,7 @@ $LAN_WAN_COMMON_BLK
 $IP_FORWARD_LN
 
 $DHCP_COMMON_BLK
+$LAN_FORWARD_BLK
 EOT
         # 零抖动 DNS：dnsmasq 常驻 :53 兜底；ADGH(:5353)/OC(:7874) 按需叠加。仅"ADGH关+OC开"时 dnsmasq 上游前置 OC(:7874)
         DNS_SERVERS="$DNS_MAIN $DNS_BACKUP"
