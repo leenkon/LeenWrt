@@ -106,8 +106,7 @@ before)
     if [ "$WITH_FWX" = "1" ]; then
         FWX_KERN_PATCH="$PROJECT_ROOT/patches/fwx/950-fwx-nf-conn-struct-user-hook.patch"
         if [ -f "$FWX_KERN_PATCH" ]; then
-            # 950 针对 6.12 系列：早期仅按 FWX_KERNEL_BASELINE 前缀拦截(跨系列如 6.13 才 fail-fast)；
-            # 真正能否打入由下方 patch --dry-run 权威判定(干净/ fuzz 告警/ 失败报错)。
+            # 950 针对 6.12 系列：系列内任意子版本均可尝试打入；能否真正打入由下方 patch --dry-run 权威判定(干净/fuzz告警/失败报错)。
             # 版本取自 target/linux/generic/kernel-6.12 的 LINUX_KERNEL_HASH-6.12.xx 行。
             FWX_KERN_VER=$(grep -m1 '^LINUX_KERNEL_HASH-6\.12\.' target/linux/generic/kernel-6.12 2>/dev/null | grep -oE '6\.12\.[0-9]+' 2>/dev/null || true)
             echo "[diy] immortalwrt 内核版本: ${FWX_KERN_VER:-未知} (950 针对 6.12 系列，系列内任意子版本均可尝试打入)"

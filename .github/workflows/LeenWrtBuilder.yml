@@ -41,13 +41,32 @@ jobs:
           upx-ucl unzip vim wget xmlto xxd zlib1g-dev
 
       - name: 同步 fwx 核心(发版前按 FWX_COMMIT 跟随上游)
-        if: ${{ github.event.inputs.with_fwx == 'true' }}
+        if: ${{ github.event.inputs.with_fwx == 'true' && github.event.inputs.profile != 'Mini' }}
         run: |
           set -e
           chmod +x $GITHUB_WORKSPACE/scripts/sync-fwx.sh
           # 拉取 fwx 四个核心组件(fwx/fwxd/libfwx_common/luci-theme-fanchmwrt)到 feeds/fwx/（构建产物，已被 .gitignore 忽略），并刷新 950 内核补丁与 FWX_COMMIT 钉点
           $GITHUB_WORKSPACE/scripts/sync-fwx.sh
           echo "[ci] fwx 核心已同步（FWX_COMMIT 见 cores/leenwrt.conf）"
+
+      - name: 同步 fanchmwrt 主题(两 profile 恒需)
+        if: ${{ github.event.inputs.with_fwx != 'true' || github.event.inputs.profile == 'Mini' }}
+        run: |
+          set -e
+          source $GITHUB_WORKSPACE/cores/leenwrt.conf
+          # full/mini 两个 .config 均勾选 luci-theme-fanchmwrt，故主题恒需(不随 fwx 开关)；钉死 THEME_COMMIT 动态拉取（与 build.sh 一致）
+          [ -z "$THEME_COMMIT" ] && { echo "[ci] 未设置 THEME_COMMIT，跳过主题拉取"; exit 0; }
+          LOCAL_THEME="$GITHUB_WORKSPACE/feeds/fwx/luci-theme-fanchmwrt"
+          TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            rel="${f#${THEME_UPSTREAM_PATH}/}"; dst="$TMP/$rel"
+            mkdir -p "$(dirname "$dst")"
+            curl -fsSL "https://raw.githubusercontent.com/${FWX_UPSTREAM_REPO}/${THEME_COMMIT}/$f" -o "$dst"
+          done < <(curl -fsSL "https://api.github.com/repos/${FWX_UPSTREAM_REPO}/git/trees/${THEME_COMMIT}?recursive=1" \
+            | python3 -c "import sys,json; [print(t['path']) for t in json.load(sys.stdin).get('tree',[]) if t['path'].startswith('${THEME_UPSTREAM_PATH}/') and t['type']=='blob']")
+          rm -rf "$LOCAL_THEME"; mkdir -p "$LOCAL_THEME"; cp -a "$TMP/." "$LOCAL_THEME/"
+          echo "[ci] fanchmwrt 主题已拉取 @ $THEME_COMMIT"
 
       - name: 拉取源码
         run: |
@@ -83,6 +102,8 @@ jobs:
           NO_ADGH="false"; [ "$WITH_ADGH" = "true" ] || NO_ADGH="true"
 
           WITH_FWX=${{ github.event.inputs.with_fwx }}
+          # 旁路由(Mini)恒不装 fwx（与 build.sh 一致：无 fwx 页面，mini 用 argon 主题）
+          [[ "$RUN_TYPE" == "bypass" ]] && WITH_FWX=false
           # 显式门控：避免 ${WITH_FWX:+"--with-fwx"} 在 WITH_FWX="false" 时（非空串）误展开成 --with-fwx
           FWX_FLAG=""; [ "$WITH_FWX" = "true" ] && FWX_FLAG="--with-fwx"
           OC_FLAG="";  [ "$WITH_OC"  = "true" ] && OC_FLAG="--with-oc"

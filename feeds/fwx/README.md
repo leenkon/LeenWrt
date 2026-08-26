@@ -1,4 +1,4 @@
-# fwx 应用过滤栈 + fanchmwrt 系统主题（均构建期按钉死 SHA 动态拉取；fwxd/libfwx_common 本地 vendored；LeenWrt 可选组件）
+# fwx 应用过滤栈 + fanchmwrt 系统主题（四代码组件均构建期按钉死 SHA 动态拉取，不 vendored 进仓库；LeenWrt 可选组件）
 
 fwx 是 fork 自 OpenAppFilter 谱系的应用层过滤栈，由 `kmod-fwx`（内核模块）、
 `fwxd`（守护）、`libfwx_common`（库）+ 多个 `luci-app-fwx-*`（Luci 界面，清单见 fwx-packages.list）组成。
@@ -14,8 +14,8 @@ fwx 是 fork 自 OpenAppFilter 谱系的应用层过滤栈，由 `kmod-fwx`（�
 
 ## 组成
 - `feeds/fwx/fwx` (kmod-fwx)：内核模块。**构建期按钉死 SHA 动态拉取，不 vendored 进仓库**（见上「来源」）。硬依赖下方 950 内核补丁提供的 `struct nf_conn.fwx_data` 成员。
-- `feeds/fwx/fwxd`：守护进程（vendored 进仓库）。
-- `feeds/fwx/libfwx_common`：公共库（vendored 进仓库）。
+- `feeds/fwx/fwxd`：守护进程（构建期按 FWX_COMMIT 动态拉取，不 vendored 进仓库）。
+- `feeds/fwx/libfwx_common`：公共库（构建期按 FWX_COMMIT 动态拉取，不 vendored 进仓库）。
 - `luci-app-fwx-*`：来自 `feeds/25.12.conf` 的 `src-git fwxluci`（fanchmwrt-packages），清单见 fwx-packages.list，跟随上游不钉死。
 - `feeds/fwx/luci-theme-fanchmwrt`（fanchmwrt 系统主题）：构建期按 `THEME_COMMIT` 从 `package/fcm/luci-theme-fanchmwrt` 动态拉取，不 vendored 进仓库；设为 LuCI 默认主题（`CONFIG_LUCI_DEFAULT_THEME="fanchmwrt"`），bootstrap 作为基础保留。
 
