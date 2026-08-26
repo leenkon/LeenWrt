@@ -45,7 +45,7 @@ jobs:
         run: |
           set -e
           chmod +x $GITHUB_WORKSPACE/scripts/sync-fwx.sh
-          # 拉取 kmod-fwx 到 feeds/fwx/fwx（构建产物，已被 .gitignore 忽略），并刷新 950 内核补丁与 FWX_COMMIT 钉点
+          # 拉取 fwx 四个核心组件(fwx/fwxd/libfwx_common/luci-theme-fanchmwrt)到 feeds/fwx/（构建产物，已被 .gitignore 忽略），并刷新 950 内核补丁与 FWX_COMMIT 钉点
           $GITHUB_WORKSPACE/scripts/sync-fwx.sh
           echo "[ci] fwx 核心已同步（FWX_COMMIT 见 cores/leenwrt.conf）"
 

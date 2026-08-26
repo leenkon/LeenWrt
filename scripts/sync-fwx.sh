@@ -20,6 +20,34 @@ README="$ROOT/feeds/fwx/README.md"
 
 echo "== sync-fwx: 从 fanchmwrt@$BRANCH 同步 fwx 组件 =="
 
+# 通用组件同步：package/fcm/<name> -> feeds/fwx/<name>
+# 用于 fwxd / libfwx_common 等纯组件（无需 kmod 补丁 / README 特殊处理）；
+# 注意：luci-app-fwx-* 经 fwxluci 安装后依赖 fwxd + libfwx_common，二者缺一不可，否则 apk 报 "no such package"。
+_sync_component() {
+  local name="$1" src="package/fcm/$name" local_dir="$ROOT/feeds/fwx/$name" tmp
+  tmp="$(mktemp -d)"
+  mapfile -t cf < <(curl -fsSL "$API" | python3 -c "
+import sys,json
+for t in json.load(sys.stdin).get('tree',[]):
+    p=t['path']
+    if p.startswith('$src/') and t['type']=='blob':
+        print(p)
+")
+  if [ "${#cf[@]}" -eq 0 ]; then
+    echo "WARN: 未拉取到组件 $name 源文件，跳过"
+    rm -rf "$tmp"
+    return 0
+  fi
+  for f in "${cf[@]}"; do
+    rel="${f#$src/}"; dst="$tmp/$rel"
+    mkdir -p "$(dirname "$dst")"
+    curl -fsSL "$RAW/$f" -o "$dst"
+  done
+  rm -rf "$local_dir"; mkdir -p "$local_dir"; cp -a "$tmp/." "$local_dir/"
+  echo "已刷新 feeds/fwx/$name/ (${#cf[@]} 文件)"
+  rm -rf "$tmp"
+}
+
 # 1) 取版本锚点（commit + date）
 read -r SHA DATE < <(curl -fsSL "https://api.github.com/repos/$FWX_REPO/commits?sha=$BRANCH&per_page=1" \
   | python3 -c "import sys,json;d=json.load(sys.stdin)[0];print(d['sha'], d['commit']['committer']['date'][:10])")
@@ -76,6 +104,11 @@ if [ "${#THEME_FILES[@]}" -gt 0 ]; then
 else
   echo "WARN: 未拉取到主题源文件，跳过主题同步"
 fi
+
+# 3c) 同步其余 fwx 核心组件（fwxd 守护进程 + libfwx_common 公共库）
+#     CI 仅走 sync-fwx.sh 拉取 fwx feed，漏拉二者会导致 luci-app-fwx-* 依赖缺失（apk: fwxd no such package）。
+_sync_component fwxd
+_sync_component libfwx_common
 
 # 4) 同步 950 内核补丁（hack-6.12 下含 fwx 的补丁）
 mapfile -t KPATCHES < <(curl -fsSL "$API" | python3 -c "
