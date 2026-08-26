@@ -24,7 +24,9 @@ workflow_*.json
 *.swp
 *.swo
 
-# fwx 核心（构建期按钉死 SHA 从 upstream 动态拉取，不入库；.fwx_commit 为本地缓存标记）
+# fwx 四个代码组件（fwx/fwxd/libfwx_common/luci-theme-fanchmwrt）：构建期按 FWX_COMMIT 钉死 SHA
+# 从 fanchmwrt/package/fcm 动态拉取，不入库；各目录内 .*_commit 为本地缓存标记（父目录忽略即覆盖）。
 feeds/fwx/fwx/
-# fanchmwrt 系统主题（同策略动态拉取，不入库；.theme_commit 为本地缓存标记）
+feeds/fwx/fwxd/
+feeds/fwx/libfwx_common/
 feeds/fwx/luci-theme-fanchmwrt/

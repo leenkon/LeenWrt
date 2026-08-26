@@ -17,6 +17,20 @@ is_valid_ipv4() {
     return 0
 }
 
+# fwx 源码树补丁：kmod 6.12 兼容 + DPI 边界守卫（上下文不符时跳过，不阻断构建）
+_apply_fwx_src_patch() {
+    local name="$1" patch="$2"
+    [ -f "$patch" ] || { echo "[diy] WARN: 未找到 $name 补丁 $patch" >&2; return; }
+    if patch -p1 --dry-run -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$patch" >/dev/null 2>&1; then
+        patch -p1 -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$patch"
+        echo "[diy] applied $name -> feeds/fwx/fwx/src/fwx_main.c"
+    elif patch -p1 --reverse --dry-run -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$patch" >/dev/null 2>&1; then
+        echo "[diy] $name 已应用，跳过"
+    else
+        echo "[diy] WARN: $name 上下文不符，未应用(详见 $patch)" >&2
+    fi
+}
+
 DEF_MAIN_IP="10.10.10.1"
 DEF_BYPASS_IP="10.10.10.2"
 SUBNET_MASK="255.255.255.0"
@@ -25,7 +39,7 @@ DNS_BACKUP="223.6.6.6"
 
 VERSION="" PHASE="" PROFILE_TYPE="" FEEDS_SRC="" FILES_DIR_NAME="files"
 NO_ADGH=0 WITH_FWX=0 WITH_OC=0 WITH_DNS_HIJACK=1
-CUSTOM_IP="" CUSTOM_GATEWAY="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD="" LOG_SERVER=""
+CUSTOM_IP="" CUSTOM_GATEWAY="" PPPOE_USERNAME="" PPPOE_PASSWORD="" ROOT_PASSWORD=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -41,7 +55,6 @@ while [ $# -gt 0 ]; do
         --no-dns-hijack) WITH_DNS_HIJACK=0; shift ;;
         --with-fwx)  WITH_FWX=1; shift ;;
         --with-oc)   WITH_OC=1; shift ;;
-        --log-server) LOG_SERVER="$2"; shift 2 ;;
         --feeds)     FEEDS_SRC="$2"; shift 2 ;;
         --files-dir) FILES_DIR_NAME="$2"; shift 2 ;;
         *) error_exit "未知参数 $1" ;;
@@ -82,51 +95,38 @@ before)
     [ -f "$FEED_CONF_SRC" ] || error_exit "缺失feed配置: $FEED_CONF_SRC"
     rm -f feeds.conf
     cp "$FEED_CONF_SRC" feeds.conf
-    # src-link 用相对路径，但 feeds update 在 openwrt TOPDIR 解析，改写为绝对路径以定位 feeds/fwx（含动态拉取的 fwx/、luci-theme-fanchmwrt/ 与 vendored 的 fwxd/libfwx_common）
+    # src-link 用相对路径，但 feeds update 在 openwrt TOPDIR 解析，改写为绝对路径以定位 feeds/fwx
+    # （feeds/fwx 下 fwx / fwxd / libfwx_common / luci-theme-fanchmwrt 四个代码组件均由 build.sh 按 FWX_COMMIT 动态拉取）
     sed -i "s#\./feeds/fwx#$PROJECT_ROOT/feeds/fwx#g" feeds.conf
 
     # kmod-fwx 硬依赖 fanchmwrt fork 内核补丁(给 struct nf_conn 加 fwx_data，原版 6.12 无)，注入 6.12 hack 目录。仅 --with-fwx。
-    if [ "$WITH_FWX" = "1" ]; then
-        FWX_KERN_PATCH="$PROJECT_ROOT/patches/fwx/950-fwx-nf-conn-struct-user-hook.patch"
-        if [ -f "$FWX_KERN_PATCH" ]; then
-            FWX_HACK_DIR="target/linux/generic/hack-6.12"
-            mkdir -p "$FWX_HACK_DIR"
-            cp -f "$FWX_KERN_PATCH" "$FWX_HACK_DIR/"
-            echo "[diy] injected fwx kernel patch -> $FWX_HACK_DIR/$(basename "$FWX_KERN_PATCH")"
-        else
-            echo "[diy] WARN: 未找到 fwx 内核补丁 $FWX_KERN_PATCH (kmod-fwx 可能因缺 fwx_data 编译失败)" >&2
+    FWX_KERN_PATCH="$PROJECT_ROOT/patches/fwx/950-fwx-nf-conn-struct-user-hook.patch"
+    if [ -f "$FWX_KERN_PATCH" ]; then
+        # 950 与 immortalwrt 内核 6.12 子版本强耦合：构建期校验，不对齐则 fail-fast（避免编译通过但首启卡死）
+        FWX_KERN_VER=$(grep -m1 'LINUX_VERSION-6\.12' include/kernel-6.12 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' 2>/dev/null || true)
+        echo "[diy] immortalwrt 内核版本: ${FWX_KERN_VER:-未知} (950 补丁需与此 6.12 子版本对齐)"
+        FWX_KERNEL_BASELINE=$(grep -m1 '^FWX_KERNEL_BASELINE=' "$PROJECT_ROOT/cores/leenwrt.conf" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)
+        if [ -n "$FWX_KERNEL_BASELINE" ] && [ -n "$FWX_KERN_VER" ] && [ "$FWX_KERN_VER" != "$FWX_KERNEL_BASELINE" ]; then
+            error_exit "950 补丁与内核版本不对齐: 当前 ${FWX_KERN_VER}, 基线 ${FWX_KERNEL_BASELINE}。请重新生成 950 或钉死 immortalwrt 内核 tag。"
         fi
-
-        # kmod-fwx 6.12 兼容：上游 fwx_main.c 把 nf_send_reset 写成 4 参数，6.12 实为 3 参数，此处对源码树打补丁。
-        FWX_KMOD_PATCH="$PROJECT_ROOT/patches/fwx/kmod-nf_send_reset-6.12.patch"
-        if [ -f "$FWX_KMOD_PATCH" ]; then
-            if patch -p1 --dry-run -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_KMOD_PATCH" >/dev/null 2>&1; then
-                patch -p1 -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_KMOD_PATCH"
-                echo "[diy] applied fwx kmod 6.12 patch -> feeds/fwx/fwx/src/fwx_main.c"
-            elif patch -p1 --reverse --dry-run -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_KMOD_PATCH" >/dev/null 2>&1; then
-                echo "[diy] fwx kmod 6.12 patch 已应用，跳过"
-            else
-                echo "[diy] WARN: fwx kmod 6.12 patch 上下文不符，未应用(详见 $FWX_KMOD_PATCH)" >&2
+        KERN_TREE=$(ls -d build_dir/linux-x86_64/linux-6.12* 2>/dev/null | head -1)
+        if [ -n "$KERN_TREE" ]; then
+            if ! patch -p1 --dry-run -d "$KERN_TREE" < "$FWX_KERN_PATCH" >/tmp/fwx950.log 2>&1; then
+                error_exit "950 补丁无法应用到已解压内核树($KERN_TREE)，内核版本可能已更新导致上下文不符"
+            elif grep -qi "fuzz" /tmp/fwx950.log; then
+                echo "[diy] WARN: 950 以 fuzz 方式应用，内核版本可能已更新，存在运行时风险" >&2
             fi
-        else
-            echo "[diy] WARN: 未找到 fwx kmod 补丁 $FWX_KMOD_PATCH (kmod-fwx 可能编译失败)" >&2
         fi
-
-        # kmod-fwx DPI 边界守卫：防止畸形/截断包在 fwx_match_feature 路径越界读 skb 触发内核 oops
-        FWX_CRASH_PATCH="$PROJECT_ROOT/patches/fwx/fwx-match-feature-crash.patch"
-        if [ -f "$FWX_CRASH_PATCH" ]; then
-            if patch -p1 --dry-run -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_CRASH_PATCH" >/dev/null 2>&1; then
-                patch -p1 -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_CRASH_PATCH"
-                echo "[diy] applied fwx DPI bounds patch -> feeds/fwx/fwx/src/fwx_main.c"
-            elif patch -p1 --reverse --dry-run -d "$PROJECT_ROOT/feeds/fwx/fwx" < "$FWX_CRASH_PATCH" >/dev/null 2>&1; then
-                echo "[diy] fwx DPI bounds patch 已应用，跳过"
-            else
-                echo "[diy] WARN: fwx DPI bounds patch 上下文不符，未应用(详见 $FWX_CRASH_PATCH)" >&2
-            fi
-        else
-            echo "[diy] WARN: 未找到 fwx DPI 边界守卫补丁 $FWX_CRASH_PATCH" >&2
-        fi
+        FWX_HACK_DIR="target/linux/generic/hack-6.12"
+        mkdir -p "$FWX_HACK_DIR"
+        cp -f "$FWX_KERN_PATCH" "$FWX_HACK_DIR/"
+        echo "[diy] injected fwx kernel patch -> $FWX_HACK_DIR/$(basename "$FWX_KERN_PATCH")"
+    else
+        echo "[diy] WARN: 未找到 fwx 内核补丁 $FWX_KERN_PATCH (kmod-fwx 可能因缺 fwx_data 编译失败)" >&2
     fi
+
+    _apply_fwx_src_patch "fwx kmod 6.12" "$PROJECT_ROOT/patches/fwx/kmod-nf_send_reset-6.12.patch"
+    _apply_fwx_src_patch "fwx DPI bounds" "$PROJECT_ROOT/patches/fwx/fwx-match-feature-crash.patch"
 
     # 主题标题/footer 处理统一移至 'themes' 阶段（feeds update -a 之后，可覆盖 fanchmwrt/argon/bootstrap 三套）
     ;;
@@ -139,9 +139,9 @@ ruby)
     if [ -d "$RUBY_DIR" ]; then
         # Makefile: 去掉 RUBY_ENABLE_YJIT:rust/host 条件依赖，仅保留 ruby/host（用 # 作分隔符避路径斜杠）
         sed -i -E 's#(PKG_BUILD_DEPENDS:=ruby/host) RUBY_ENABLE_YJIT:rust/host#\1#' "$RUBY_DIR/Makefile"
-        # Config.in: 删除 x86_64/aarch64 默认开启 YJIT（让 defconfig 不再翻成 =y）
+        # Makefile: 删除 x86_64/aarch64 默认开启 YJIT（让 defconfig 不再翻成 =y）
         sed -i -E '/^[[:space:]]*default y if x86_64\|\|aarch64[[:space:]]*$/d' "$RUBY_DIR/Makefile"
-        echo "[diy] ruby: 已解耦 YJIT（Makefile 依赖 + Config.in default 均清除）"
+        echo "[diy] ruby: 已解耦 YJIT（Makefile 依赖 + default 均清除）"
     else
         echo "[diy] WARN: 未找到 $RUBY_DIR（feeds update 是否已执行？），跳过 ruby YJIT 解耦" >&2
     fi
@@ -216,36 +216,10 @@ after)
     mkdir -p "$(dirname "$OUT")"
     rm -f "$OUT" "$SHADOW"
 
-    # 公共：确保 loopback 接口存在。overlay/rootfs 挂载异常时默认配置可能缺失，导致 lo 未 UP、
-    # 127.0.0.1 不可达，进而 ADGH/OC/dnsmasq/LuCI 全挂。放开头供 full/bypass 共用。
-    LOOPBACK_FIX_BLK=$(cat <<'EOF'
-if ! uci -q get network.loopback >/dev/null 2>&1; then
-    uci set network.loopback=interface
-    uci set network.loopback.device='lo'
-    uci set network.loopback.proto='static'
-    uci set network.loopback.ipaddr='127.0.0.1'
-    uci set network.loopback.netmask='255.0.0.0'
-fi
-EOF
-)
-
     ip_esc=$(_escape_uci "$CUSTOM_IP")
-    log_server_esc=$(_escape_uci "$LOG_SERVER")
 
     # ===== 公共配置块（各 profile 按需引用） =====
     IP_FORWARD_LN='grep -q '\''net.ipv4.ip_forward=1'\'' /etc/sysctl.conf || echo '\''net.ipv4.ip_forward=1'\'' >> /etc/sysctl.conf'
-
-    # 公共：确保 loopback 接口存在。overlay/rootfs 挂载异常时默认配置可能缺失，导致 lo 未 UP、127.0.0.1 不可达，进而 ADGH/OC/dnsmasq/LuCI 全挂。
-    LOOPBACK_FIX_BLK=$(cat <<'EOF'
-if ! uci -q get network.loopback >/dev/null 2>&1; then
-    uci set network.loopback=interface
-    uci set network.loopback.device='lo'
-    uci set network.loopback.proto='static'
-    uci set network.loopback.ipaddr='127.0.0.1'
-    uci set network.loopback.netmask='255.0.0.0'
-fi
-EOF
-)
 
     # full 共用：LAN 静态地址
     LAN_WAN_COMMON_BLK=$(cat <<EOF
@@ -276,25 +250,6 @@ EOF
 chmod 755 /etc/init.d/adguardhome
 /etc/init.d/adguardhome enable
 /etc/init.d/adguardhome start
-EOF
-)
-
-    # full 共用：LAN 区 forward + lan->wan forwarding 重置
-    LAN_FORWARD_BLK=$(cat <<'EOF'
-LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
-# 显式置 lan 区三态 ACCEPT（与 bypass 分支一致），不依赖上游默认，避免非空配置下 input=REJECT 挡掉 LuCI(后台)
-[ -n "$LAN_FW" ] && {
-    uci set ${LAN_FW}.input='ACCEPT'
-    uci set ${LAN_FW}.output='ACCEPT'
-    uci set ${LAN_FW}.forward='ACCEPT'
-}
-WAN_FW=$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
-# PPPoE MTU 1492，缺 MSS 钳制会导致大包被 PMTUD 黑洞丢弃(已连接但打不开网页)，显式钳制。
-[ -n "$WAN_FW" ] && uci set ${WAN_FW}.mtu_fix='1'
-while uci -q delete firewall.@forwarding[0]; do :; done
-uci add firewall forwarding
-uci set firewall.@forwarding[-1].src='lan'
-uci set firewall.@forwarding[-1].dest='wan'
 EOF
 )
 
@@ -331,18 +286,6 @@ uci commit upnpd
 EOF
 )
 
-    # 远程 syslog（仅 --log-server 指定时生成）：UDP 514 推给对端 syslog 采集端，非网页访问
-    if [ -n "$LOG_SERVER" ]; then
-        REMOTE_SYSLOG_BLK=$(cat <<EOF
-uci set system.@system[0].log_ip='$log_server_esc'
-uci set system.@system[0].log_port='514'
-uci set system.@system[0].log_proto='udp'
-EOF
-)
-    else
-        REMOTE_SYSLOG_BLK=""
-    fi
-
     # full 共用：DHCP 公共段（范围、RA、下发单 DNS 等）
     DHCP_COMMON_BLK=$(cat <<EOF
 uci -q delete dhcp.lan.dhcp_option
@@ -368,6 +311,8 @@ uci set network.wan.username='$u'
 uci set network.wan.password='$p'
 uci set network.wan.ipv6='auto'
 uci set network.wan.peerdns='1'
+# PPPoE MTU 1492，缺 MSS 钳制会导致大包被 PMTU 黑洞丢弃(已连接但打不开网页)
+uci set network.wan.mtu_fix='1'
 uci -q delete network.wan6
 EOT
 )
@@ -375,6 +320,7 @@ EOT
             WAN_BLK=$(cat <<EOT
 uci set network.wan.proto='dhcp'
 uci set network.wan.peerdns='1'
+uci set network.wan.mtu_fix='1'
 uci set network.wan6.proto='dhcpv6'
 uci set network.wan6.reqaddress='try'
 uci set network.wan6.reqprefix='auto'
@@ -385,9 +331,6 @@ EOT
 
     echo '#!/bin/sh' > "$OUT"
     echo "logger -t uci-defaults \"开始应用${PROFILE_TYPE}配置\"" >> "$OUT"
-    cat >> "$OUT" <<EOT
-$LOOPBACK_FIX_BLK
-EOT
 
     if [ "$PROFILE_TYPE" = "bypass" ]; then
         gw_esc=$(_escape_uci "$CUSTOM_GATEWAY")
@@ -420,9 +363,6 @@ uci commit dhcp
 LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 [ -n "\$LAN_FW" ] && {
-    uci set \${LAN_FW}.input='ACCEPT'
-    uci set \${LAN_FW}.output='ACCEPT'
-    uci set \${LAN_FW}.forward='ACCEPT'
     uci set \${LAN_FW}.masq='1'
     uci set \${LAN_FW}.mtu_fix='1'
 }
@@ -445,47 +385,22 @@ $IP_FORWARD_LN
 
 $DHCP_COMMON_BLK
 EOT
-        if [ "$NO_ADGH" = "1" ]; then
-            # ADGH 关闭：dnsmasq :53 兜底直连上游（:53 为统一常驻端口，无需让出）
-            if [ "$WITH_OC" = "1" ]; then
-                # OC 开：dnsmasq 上游指向 OC redir-host(:7874) + 阿里云兜底，OC 停时仍解析
-                cat >> "$OUT" <<EOT
-uci -q delete dhcp.@dnsmasq[0].port
-uci -q delete dhcp.@dnsmasq[0].server
-uci add_list dhcp.@dnsmasq[0].server='127.0.0.1#7874'
-uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
-uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
-uci set dhcp.@dnsmasq[0].noresolv='1'
-uci set dhcp.@dnsmasq[0].dns_redirect='0'
-uci commit dhcp
-EOT
-            else
-                # OC 关 + ADGH 关：dnsmasq 直连上游 DNS（纯主路由，无需旁路）
-                cat >> "$OUT" <<EOT
-uci -q delete dhcp.@dnsmasq[0].port
-uci -q delete dhcp.@dnsmasq[0].server
-uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
-uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
-uci set dhcp.@dnsmasq[0].noresolv='1'
-uci set dhcp.@dnsmasq[0].dns_redirect='0'
-uci commit dhcp
-EOT
-            fi
-        else
-            # 带 ADGH：dnsmasq 常驻 :53 兜底，AdGuardHome 占 :5353，纯阿里云兜底
-            cat >> "$OUT" <<EOT
-uci -q delete dhcp.@dnsmasq[0].port
-uci -q delete dhcp.@dnsmasq[0].server
-uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
-uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
-uci set dhcp.@dnsmasq[0].noresolv='1'
-uci set dhcp.@dnsmasq[0].dns_redirect='0'
-uci commit dhcp
-EOT
-        fi
-        cat >> "$OUT" <<EOT
-$LAN_FORWARD_BLK
+        # 零抖动 DNS 拓扑：dnsmasq 常驻 :53 兜底；ADGH(:5353)/OC(:7874) 按需叠加。
+        # 仅 "ADGH 关 + OC 开" 时 dnsmasq 上游前置 OC redir-host(:7874)，其余直连上游 DNS。
+        DNS_SERVERS="$DNS_MAIN $DNS_BACKUP"
+        [ "$NO_ADGH" = "1" ] && [ "$WITH_OC" = "1" ] && DNS_SERVERS="127.0.0.1#7874 $DNS_MAIN $DNS_BACKUP"
+        {
+            echo "uci -q delete dhcp.@dnsmasq[0].port"
+            echo "uci -q delete dhcp.@dnsmasq[0].server"
+            echo "uci set dhcp.@dnsmasq[0].noresolv='1'"
+            echo "uci set dhcp.@dnsmasq[0].dns_redirect='0'"
+            for s in $DNS_SERVERS; do
+                echo "uci add_list dhcp.@dnsmasq[0].server='$s'"
+            done
+            echo "uci commit dhcp"
+        } >> "$OUT"
 
+        cat >> "$OUT" <<EOT
 $UPNP_BLK
 EOT
         if [ "$WITH_OC" = "1" ]; then
@@ -529,10 +444,6 @@ uci -q delete system.ntp.server
 uci add_list system.ntp.server='ntp.aliyun.com'
 uci add_list system.ntp.server='cn.pool.ntp.org'
 uci commit system
-
-$REMOTE_SYSLOG_BLK
-uci commit system
-/etc/init.d/log restart
 
 # 固定 CPU 为 performance 模式，避免降频抖动
 chmod 755 /etc/init.d/cpufreq-perf

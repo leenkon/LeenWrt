@@ -100,8 +100,8 @@ jobs:
           fi
 
           if $WITH_OC; then
-            chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh
-            $GITHUB_WORKSPACE/scripts/upgrade-openclash-luci.sh .
+            chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash.sh
+            $GITHUB_WORKSPACE/scripts/upgrade-openclash.sh luci .
           fi
 
           # AdGuardHome LuCI 壳去除对引擎包(adguardhome)的硬依赖（leenwrt 25.12；引擎走二进制注入）
@@ -166,7 +166,7 @@ jobs:
             $FWX_FLAG $OC_FLAG $DNS_HIJACK_FLAG \
             --root-pass "$ROOTPWD"
 
-          $WITH_OC && { chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh; $GITHUB_WORKSPACE/scripts/upgrade-openclash-core.sh $GITHUB_WORKSPACE --files-dir "$FILES_DIR_ABS"; } || true
+          $WITH_OC && { chmod +x $GITHUB_WORKSPACE/scripts/upgrade-openclash.sh; $GITHUB_WORKSPACE/scripts/upgrade-openclash.sh core $GITHUB_WORKSPACE --files-dir "$FILES_DIR_ABS"; } || true
           if $WITH_ADGH; then
             chmod +x $GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh
             $GITHUB_WORKSPACE/scripts/upgrade-adgh-binary.sh $GITHUB_WORKSPACE --files-dir "$FILES_DIR_ABS"

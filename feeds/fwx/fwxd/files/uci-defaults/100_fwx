@@ -1,3 +1,0 @@
-#!/bin/sh
-uci set fwx.global.theme_mode='1'
-uci commit fwx

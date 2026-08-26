@@ -128,7 +128,7 @@ echo -e "\n${YELLOW}[1/7] 检查换行符和权限...${NC}"
 find "$SCRIPT_DIR/scripts" "$SCRIPT_DIR/$FILES_DIR" -type f \
   \( -name "*.sh" -o -name "*.yaml" -o -name "dns-hijack" -o -name "99-adgh-filters" -o -path "*/init.d/*" \) \
   -exec sed -i 's/\r$//' {} + 2>/dev/null || true
-chmod +x "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh"
+chmod +x "$DIY" "$SCRIPT_DIR/build.sh" "$SCRIPT_DIR/scripts/upgrade-adgh-binary.sh" "$SCRIPT_DIR/scripts/upgrade-openclash.sh"
 success "完成"
 
 echo -e "\n${YELLOW}[2/7] 安装依赖...${NC}"
@@ -201,9 +201,13 @@ for t in d.get('tree',[]):
   rm -rf "$tmp" 2>/dev/null || true
 }
 
-# 3.5 fwx 核心动态拉取（仅 --with-fwx），950/kmod 补丁不受影响
+# 3.5 fwx 四个代码组件动态拉取（仅 --with-fwx）；950/kmod 补丁不受影响。
+# 四组件同源 package/fcm（FWX_UPSTREAM_PATH=package/fcm/fwx，取其父目录为基），钉死同一 FWX_COMMIT。
 if [[ "$WITH_FWX" = "true" ]]; then
-  pull_fcm_package "$FWX_UPSTREAM_PATH" "$SCRIPT_DIR/feeds/fwx/fwx" "$SCRIPT_DIR/feeds/fwx/fwx/.fwx_commit" "$FWX_COMMIT" "fwx 核心"
+  FCM_BASE="${FWX_UPSTREAM_PATH%/*}"
+  pull_fcm_package "$FCM_BASE/fwx"           "$SCRIPT_DIR/feeds/fwx/fwx"           "$SCRIPT_DIR/feeds/fwx/fwx/.fwx_commit"           "$FWX_COMMIT" "fwx 核心"
+  pull_fcm_package "$FCM_BASE/fwxd"          "$SCRIPT_DIR/feeds/fwx/fwxd"          "$SCRIPT_DIR/feeds/fwx/fwxd/.fwxd_commit"         "$FWX_COMMIT" "fwxd"
+  pull_fcm_package "$FCM_BASE/libfwx_common" "$SCRIPT_DIR/feeds/fwx/libfwx_common" "$SCRIPT_DIR/feeds/fwx/libfwx_common/.libfwx_common_commit" "$FWX_COMMIT" "libfwx_common"
 fi
 
 # 3.6 fanchmwrt 系统主题动态拉取（默认主题 fanchmwrt，bootstrap 作基础）
@@ -224,7 +228,7 @@ fi
 
 # OpenClash LuCI 替换（仅 Mini 旁路由 / Full 勾选 OC 时）
 if [[ "$WITH_OC" == "true" ]]; then
-  "$SCRIPT_DIR/scripts/upgrade-openclash-luci.sh" "$OPENWRT_DIR"
+  "$SCRIPT_DIR/scripts/upgrade-openclash.sh" luci "$OPENWRT_DIR"
 fi
 
 # AdGuardHome LuCI 壳去除对引擎包(adguardhome)的硬依赖（leenwrt 25.12；引擎走二进制注入）
@@ -306,7 +310,7 @@ success "完成"
 echo -e "\n${YELLOW}[6/7] 预装核心与打包文件...${NC}"
 # OpenClash Meta 核心预装（仅 Mini 旁路由 / Full 勾选 OC 时）
 if [[ "$WITH_OC" == "true" ]]; then
-    "$SCRIPT_DIR/scripts/upgrade-openclash-core.sh" "$SCRIPT_DIR" --files-dir "$FILES_DIR_ABS"
+    "$SCRIPT_DIR/scripts/upgrade-openclash.sh" core "$SCRIPT_DIR" --files-dir "$FILES_DIR_ABS"
 fi
 # AdGuardHome 官方预编译二进制注入（仅 Mini 旁路由 / Full 勾选 AdGuardHome 时；未勾选时不注入）
 if [[ "$WITH_ADGH" == "true" ]]; then
