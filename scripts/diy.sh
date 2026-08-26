@@ -66,9 +66,9 @@ done
 case "$PROFILE_TYPE" in ""|bypass|full) ;; *) error_exit "--type 仅支持 bypass / full" ;; esac
 
 if [ "$PROFILE_TYPE" = "bypass" ]; then
-    # 旁路由：--ip=本机LAN IP(默认10.10.10.2)，--gateway=上游主路由(默认10.10.10.1)；IP取LAN IP，运行期全量劫持
+    # 旁路由：--ip=本机LAN IP(默认10.10.10.2)；--gateway=上游主路由IP，不能为空(网关缺失旁路由自身无法出网，ADGH/OC 订阅更新将失败)
     [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_BYPASS_IP"
-    [ -z "$CUSTOM_GATEWAY" ] && CUSTOM_GATEWAY="$DEF_MAIN_IP"
+    [ -z "$CUSTOM_GATEWAY" ] && error_exit "旁路由(Mini)必须指定网关(上游主路由IP)，不能为空"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法旁路由IP: $CUSTOM_IP"
     is_valid_ipv4 "$CUSTOM_GATEWAY" || error_exit "非法旁路由网关: $CUSTOM_GATEWAY"
     [ -n "$PPPOE_USERNAME" ] || [ -n "$PPPOE_PASSWORD" ] && error_exit "旁路由不支持PPPoE，请使用 --type full"
