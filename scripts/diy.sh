@@ -216,11 +216,36 @@ after)
     mkdir -p "$(dirname "$OUT")"
     rm -f "$OUT" "$SHADOW"
 
+    # 公共：确保 loopback 接口存在。overlay/rootfs 挂载异常时默认配置可能缺失，导致 lo 未 UP、
+    # 127.0.0.1 不可达，进而 ADGH/OC/dnsmasq/LuCI 全挂。放开头供 full/bypass 共用。
+    LOOPBACK_FIX_BLK=$(cat <<'EOF'
+if ! uci -q get network.loopback >/dev/null 2>&1; then
+    uci set network.loopback=interface
+    uci set network.loopback.device='lo'
+    uci set network.loopback.proto='static'
+    uci set network.loopback.ipaddr='127.0.0.1'
+    uci set network.loopback.netmask='255.0.0.0'
+fi
+EOF
+)
+
     ip_esc=$(_escape_uci "$CUSTOM_IP")
     log_server_esc=$(_escape_uci "$LOG_SERVER")
 
     # ===== 公共配置块（各 profile 按需引用） =====
     IP_FORWARD_LN='grep -q '\''net.ipv4.ip_forward=1'\'' /etc/sysctl.conf || echo '\''net.ipv4.ip_forward=1'\'' >> /etc/sysctl.conf'
+
+    # 公共：确保 loopback 接口存在。overlay/rootfs 挂载异常时默认配置可能缺失，导致 lo 未 UP、127.0.0.1 不可达，进而 ADGH/OC/dnsmasq/LuCI 全挂。
+    LOOPBACK_FIX_BLK=$(cat <<'EOF'
+if ! uci -q get network.loopback >/dev/null 2>&1; then
+    uci set network.loopback=interface
+    uci set network.loopback.device='lo'
+    uci set network.loopback.proto='static'
+    uci set network.loopback.ipaddr='127.0.0.1'
+    uci set network.loopback.netmask='255.0.0.0'
+fi
+EOF
+)
 
     # full 共用：LAN 静态地址
     LAN_WAN_COMMON_BLK=$(cat <<EOF
@@ -257,7 +282,12 @@ EOF
     # full 共用：LAN 区 forward + lan->wan forwarding 重置
     LAN_FORWARD_BLK=$(cat <<'EOF'
 LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
-[ -n "$LAN_FW" ] && uci set ${LAN_FW}.forward='ACCEPT'
+# 显式置 lan 区三态 ACCEPT（与 bypass 分支一致），不依赖上游默认，避免非空配置下 input=REJECT 挡掉 LuCI(后台)
+[ -n "$LAN_FW" ] && {
+    uci set ${LAN_FW}.input='ACCEPT'
+    uci set ${LAN_FW}.output='ACCEPT'
+    uci set ${LAN_FW}.forward='ACCEPT'
+}
 WAN_FW=$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 # PPPoE MTU 1492，缺 MSS 钳制会导致大包被 PMTUD 黑洞丢弃(已连接但打不开网页)，显式钳制。
 [ -n "$WAN_FW" ] && uci set ${WAN_FW}.mtu_fix='1'
@@ -336,16 +366,16 @@ EOF
 uci set network.wan.proto='pppoe'
 uci set network.wan.username='$u'
 uci set network.wan.password='$p'
-            uci set network.wan.ipv6='auto'
-            uci set network.wan.peerdns='1'
-            uci -q delete network.wan6
+uci set network.wan.ipv6='auto'
+uci set network.wan.peerdns='1'
+uci -q delete network.wan6
 EOT
 )
         else
             WAN_BLK=$(cat <<EOT
-            uci set network.wan.proto='dhcp'
-            uci set network.wan.peerdns='1'
-            uci set network.wan6.proto='dhcpv6'
+uci set network.wan.proto='dhcp'
+uci set network.wan.peerdns='1'
+uci set network.wan6.proto='dhcpv6'
 uci set network.wan6.reqaddress='try'
 uci set network.wan6.reqprefix='auto'
 EOT
@@ -355,6 +385,9 @@ EOT
 
     echo '#!/bin/sh' > "$OUT"
     echo "logger -t uci-defaults \"开始应用${PROFILE_TYPE}配置\"" >> "$OUT"
+    cat >> "$OUT" <<EOT
+$LOOPBACK_FIX_BLK
+EOT
 
     if [ "$PROFILE_TYPE" = "bypass" ]; then
         gw_esc=$(_escape_uci "$CUSTOM_GATEWAY")
