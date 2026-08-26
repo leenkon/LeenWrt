@@ -102,34 +102,37 @@ before)
     # （feeds/fwx 下 fwx / fwxd / libfwx_common / luci-theme-fanchmwrt 四个代码组件均由 build.sh 按 FWX_COMMIT 动态拉取）
     sed -i "s#\./feeds/fwx#$PROJECT_ROOT/feeds/fwx#g" feeds.conf
 
-    # kmod-fwx 硬依赖 fanchmwrt fork 内核补丁(给 struct nf_conn 加 fwx_data，原版 6.12 无)，注入 6.12 hack 目录。仅 --with-fwx。
-    FWX_KERN_PATCH="$PROJECT_ROOT/patches/fwx/950-fwx-nf-conn-struct-user-hook.patch"
-    if [ -f "$FWX_KERN_PATCH" ]; then
-        # 950 与 immortalwrt 内核 6.12 子版本强耦合：构建期校验，不对齐则 fail-fast（避免编译通过但首启卡死）
-        FWX_KERN_VER=$(grep -m1 'LINUX_VERSION-6\.12' include/kernel-6.12 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' 2>/dev/null || true)
-        echo "[diy] immortalwrt 内核版本: ${FWX_KERN_VER:-未知} (950 补丁需与此 6.12 子版本对齐)"
-        FWX_KERNEL_BASELINE=$(grep -m1 '^FWX_KERNEL_BASELINE=' "$PROJECT_ROOT/cores/leenwrt.conf" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)
-        if [ -n "$FWX_KERNEL_BASELINE" ] && [ -n "$FWX_KERN_VER" ] && [ "$FWX_KERN_VER" != "$FWX_KERNEL_BASELINE" ]; then
-            error_exit "950 补丁与内核版本不对齐: 当前 ${FWX_KERN_VER}, 基线 ${FWX_KERNEL_BASELINE}。请重新生成 950 或钉死 immortalwrt 内核 tag。"
-        fi
-        KERN_TREE=$(ls -d build_dir/linux-x86_64/linux-6.12* 2>/dev/null | head -1)
-        if [ -n "$KERN_TREE" ]; then
-            if ! patch -p1 --dry-run -d "$KERN_TREE" < "$FWX_KERN_PATCH" >/tmp/fwx950.log 2>&1; then
-                error_exit "950 补丁无法应用到已解压内核树($KERN_TREE)，内核版本可能已更新导致上下文不符"
-            elif grep -qi "fuzz" /tmp/fwx950.log; then
-                echo "[diy] WARN: 950 以 fuzz 方式应用，内核版本可能已更新，存在运行时风险" >&2
+    # fwx 内核改动(kmod-fwx 硬依赖)整体受 --with-fwx 门控：不勾选时零 fwx 内核补丁，连 950 都不注入。
+    if [ "$WITH_FWX" = "1" ]; then
+        FWX_KERN_PATCH="$PROJECT_ROOT/patches/fwx/950-fwx-nf-conn-struct-user-hook.patch"
+        if [ -f "$FWX_KERN_PATCH" ]; then
+            # 950 与 immortalwrt 内核 6.12 子版本强耦合：构建期校验，不对齐则 fail-fast（避免编译通过但首启卡死）
+            # 版本定义在 target/linux/generic/kernel-6.12 的 LINUX_KERNEL_HASH-6.12.xx 行（完整点版本 6.12.xx）
+            FWX_KERN_VER=$(grep -m1 '^LINUX_KERNEL_HASH-6\.12\.' target/linux/generic/kernel-6.12 2>/dev/null | grep -oE '6\.12\.[0-9]+' 2>/dev/null || true)
+            echo "[diy] immortalwrt 内核版本: ${FWX_KERN_VER:-未知} (950 补丁需与此 6.12 子版本对齐)"
+            FWX_KERNEL_BASELINE=$(grep -m1 '^FWX_KERNEL_BASELINE=' "$PROJECT_ROOT/cores/leenwrt.conf" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)
+            if [ -n "$FWX_KERNEL_BASELINE" ] && [ -n "$FWX_KERN_VER" ] && [ "$FWX_KERN_VER" != "$FWX_KERNEL_BASELINE" ]; then
+                error_exit "950 补丁与内核版本不对齐: 当前 ${FWX_KERN_VER}, 基线 ${FWX_KERNEL_BASELINE}。请重新生成 950 或钉死 immortalwrt 内核 tag。"
             fi
+            KERN_TREE=$(ls -d build_dir/linux-x86_64/linux-6.12* 2>/dev/null | head -1)
+            if [ -n "$KERN_TREE" ]; then
+                if ! patch -p1 --dry-run -d "$KERN_TREE" < "$FWX_KERN_PATCH" >/tmp/fwx950.log 2>&1; then
+                    error_exit "950 补丁无法应用到已解压内核树($KERN_TREE)，内核版本可能已更新导致上下文不符"
+                elif grep -qi "fuzz" /tmp/fwx950.log; then
+                    echo "[diy] WARN: 950 以 fuzz 方式应用，内核版本可能已更新，存在运行时风险" >&2
+                fi
+            fi
+            FWX_HACK_DIR="target/linux/generic/hack-6.12"
+            mkdir -p "$FWX_HACK_DIR"
+            cp -f "$FWX_KERN_PATCH" "$FWX_HACK_DIR/"
+            echo "[diy] injected fwx kernel patch -> $FWX_HACK_DIR/$(basename "$FWX_KERN_PATCH")"
+        else
+            echo "[diy] WARN: 未找到 fwx 内核补丁 $FWX_KERN_PATCH (kmod-fwx 可能因缺 fwx_data 编译失败)" >&2
         fi
-        FWX_HACK_DIR="target/linux/generic/hack-6.12"
-        mkdir -p "$FWX_HACK_DIR"
-        cp -f "$FWX_KERN_PATCH" "$FWX_HACK_DIR/"
-        echo "[diy] injected fwx kernel patch -> $FWX_HACK_DIR/$(basename "$FWX_KERN_PATCH")"
-    else
-        echo "[diy] WARN: 未找到 fwx 内核补丁 $FWX_KERN_PATCH (kmod-fwx 可能因缺 fwx_data 编译失败)" >&2
-    fi
 
-    _apply_fwx_src_patch "fwx kmod 6.12" "$PROJECT_ROOT/patches/fwx/kmod-nf_send_reset-6.12.patch"
-    _apply_fwx_src_patch "fwx DPI bounds" "$PROJECT_ROOT/patches/fwx/fwx-match-feature-crash.patch"
+        _apply_fwx_src_patch "fwx kmod 6.12" "$PROJECT_ROOT/patches/fwx/kmod-nf_send_reset-6.12.patch"
+        _apply_fwx_src_patch "fwx DPI bounds" "$PROJECT_ROOT/patches/fwx/fwx-match-feature-crash.patch"
+    fi
 
     # 主题标题/footer 处理统一移至 'themes' 阶段（feeds update -a 之后，可覆盖 fanchmwrt/argon/bootstrap 三套）
     ;;
