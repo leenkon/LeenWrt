@@ -56,8 +56,6 @@ start_service() {
 	procd_close_instance
 
 	# 零抖动劫持监控循环：ADGH :5353 监听即布表、失联即清表回退 dnsmasq :53
-	# 不可用 timeout 包裹：busybox 默认未编译该 applet(CONFIG_BUSYBOX_DEFAULT_TIMEOUT=n)，
-	# 用了会因 command not found(rc=127) 导致劫持根本不执行；dns-hijack 是纯本地 nftables 操作，无卡死风险
 	local dhijack
 	config_get_bool dhijack config dns_hijack 1
 	if [ "$dhijack" = "1" ] && [ -x /usr/sbin/dns-hijack ]; then
