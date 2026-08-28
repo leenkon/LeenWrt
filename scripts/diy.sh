@@ -564,8 +564,7 @@ chmod 755 /etc/init.d/cpufreq-perf
 /etc/init.d/cpufreq-perf enable
 /etc/init.d/cpufreq-perf start
 
-# 首启装 apps/ 的 .apk：本次启动由 /etc/rc.local 在系统就绪后触发（早期 PATH 不含 /usr/bin）；
-# enable 仅备下次启动兜底（rcS 的 glob 已展开，本次启动不会被遍历到）
+# 首启装 apps/ 的 .apk：本次由 rc.local 在系统就绪后触发；enable 备下次启动兜底(rcS glob 已展开)
 chmod 755 /etc/init.d/firstboot-pkgs
 /etc/init.d/firstboot-pkgs enable
 

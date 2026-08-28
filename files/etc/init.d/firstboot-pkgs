@@ -3,9 +3,6 @@
 START=99
 STOP=10
 
-# PATH 兜底：apk 在 /usr/bin，执行环境 PATH 缺它则 command not found(rc=127)
-export PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
-
 install_offline() {
     [ -d /etc/firstboot-pkgs/apps ] || return 0
     local ok=1
