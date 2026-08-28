@@ -354,7 +354,7 @@ uci set dhcp.@dnsmasq[0].sequential_ip='1'
 EOF
 )
 
-    # 主路由端口：完全使用 OpenWrt 默认约定（eth0=LAN/eth1=WAN），不再硬编码 WAN 口
+    # 主路由端口：WAN 锁定 eth1（本机物理前口在系统中映射为 eth1，非 eth0）；其余 eth* 桥 br-lan 作 LAN
     if [ "$PROFILE_TYPE" = "full" ]; then
         if [ -n "$PPPOE_USERNAME" ]; then
             u=$(_escape_uci "$PPPOE_USERNAME"); p=$(_escape_uci "$PPPOE_PASSWORD")
@@ -364,6 +364,7 @@ uci set network.wan.username='$u'
 uci set network.wan.password='$p'
 uci set network.wan.ipv6='auto'
 uci set network.wan.peerdns='1'
+uci set network.wan.device='eth1'
 # PPPoE MTU 1492，缺 MSS 钳制会导致大包被 PMTU 黑洞丢弃(已连接但打不开网页)
 uci set network.wan.mtu_fix='1'
 uci -q delete network.wan6
@@ -372,6 +373,7 @@ EOT
         else
             WAN_BLK=$(cat <<EOT
 uci set network.wan.proto='dhcp'
+uci set network.wan.device='eth1'
 uci set network.wan.peerdns='1'
 uci set network.wan.mtu_fix='1'
 uci set network.wan6.proto='dhcpv6'
@@ -380,7 +382,25 @@ uci set network.wan6.reqprefix='auto'
 EOT
 )
         fi
-        # 端口：主路由不重建 br-lan，直接沿用 OpenWrt 默认的 eth0=LAN/eth1=WAN
+        # 端口：eth1=WAN 不进桥；其余 eth* 桥接 br-lan 作 LAN（避免 lan/wan 争 eth1）
+        PORT_BLK=$(cat <<'EOT'
+# 先删既有 br-lan device（默认配置含匿名段，不删会并存两个同名桥 → 端口双归属、LuCI 解析异常）
+for _d in $(uci show network 2>/dev/null | sed -n "s/^\(network\.[^.]*\)\.name='br-lan'$/\1/p"); do
+  uci -q delete "$_d"
+done
+_lan_eth=$(ls /sys/class/net 2>/dev/null | grep -E '^eth[0-9]+$' | grep -v '^eth1$' | sort -V)
+uci set network.br_lan=device
+uci set network.br_lan.name='br-lan'
+uci set network.br_lan.type='bridge'
+uci -q delete network.br_lan.ports
+for _e in $_lan_eth; do uci add_list network.br_lan.ports="$_e"; done
+uci set network.lan.device='br-lan'
+uci -q delete network.lan.type
+uci -q delete network.lan.ports
+uci -q delete network.lan.ifname
+uci commit network
+EOT
+)
     fi
 
     echo '#!/bin/sh' > "$OUT"
@@ -473,6 +493,7 @@ EOT
     elif [ "$PROFILE_TYPE" = "full" ]; then
         cat >> "$OUT" <<EOT
 $WAN_BLK
+$PORT_BLK
 $LAN_WAN_COMMON_BLK
 
 $IP_FORWARD_LN
