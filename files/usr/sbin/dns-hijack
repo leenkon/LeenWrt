@@ -1,20 +1,13 @@
 #!/bin/sh
-# DNS 劫持(绑定 ADGH 生命周期)：LAN 明文 :53 重定向到本机 ADGH(:5353)，dnsmasq 常驻 :53 作兜底。
-# ADGH 宕则清表、LAN 直落 dnsmasq :53(掉过滤但不掉网，零抖动)；由 adguardhome init.d 监控循环调用。
-# priority -150 早于 firewall4 dstnat(-100)；dns_hijack_bypass_ip 为空=全量劫持(旁路由/单路由，自动适应IP变更)；主路由双路由填对端旁路由IP，据此排除避免二次劫持。
-# 依赖：ADGH 须 bind 0.0.0.0:5353（见 adguardhome.yaml bind_hosts），否则重定向到 lan_ip:5353 无法命中仅绑 127.0.0.1 的 socket。
+# 仅 ADGH 安装时生效：把 LAN 明文 :53 重定向到本机 ADGH(:5353)；dnsmasq 常驻 :53 兜底（脚本由 adguardhome init.d 监控循环调用）。
+# ADGH 未装/未监听 :5353 则清表，LAN 直落 dnsmasq :53（掉过滤不掉网，零抖动）；priority -150 早于 firewall4 dstnat(-100)。
+# dns_hijack_bypass_ip 空=全量劫持；双路由主路由填对端旁路由 IP 以排除二次劫持。ADGH 须 bind 0.0.0.0:5353（yaml bind_hosts）。
+# 仅 br-lan 入向劫持：避开回环，否则 ADGH 自身上游(127.0.0.1:53)被重定向到 :5353 形成死循环。
 if ! command -v nft >/dev/null 2>&1; then
     logger -t dns-hijack "ERROR: nft not found"
     exit 0
 fi
 
-nft delete table inet dns_hijack 2>/dev/null
-
-# 仅当 ADGH 安装且监听 :5353 才劫持(脚本由 adguardhome init.d 调用)
-if [ ! -x /usr/bin/AdGuardHome ]; then
-    logger -t dns-hijack "AdGuardHome 未安装，跳过劫持（回退 dnsmasq :53）"
-    exit 0
-fi
 port_listen() {
     if command -v ss >/dev/null 2>&1; then
         ss -lun 2>/dev/null | grep -q ':5353 '
@@ -24,6 +17,19 @@ port_listen() {
         return 1
     fi
 }
+
+# 防抖：ADGH 已监听且规则就位则跳过重建，避免每 5s 拆表致 DNS 瞬时回落 dnsmasq :53
+if port_listen && nft list table inet dns_hijack 2>/dev/null | grep -q 'dport 53 redirect to :5353'; then
+    exit 0
+fi
+
+nft delete table inet dns_hijack 2>/dev/null
+
+# 未装 ADGH 直接退出（dnsmasq :53 兜底）
+if [ ! -x /usr/bin/AdGuardHome ]; then
+    logger -t dns-hijack "AdGuardHome 未安装，跳过劫持（回退 dnsmasq :53）"
+    exit 0
+fi
 if ! port_listen; then
     logger -t dns-hijack "AdGuardHome 未在监听 :5353，清劫持回退 dnsmasq :53（零抖动）"
     exit 0
@@ -37,16 +43,16 @@ BYPASS_IP=$(uci -q get adguardhome.config.dns_hijack_bypass_ip 2>/dev/null)
 
 if [ -n "$BYPASS_IP" ] && [ "$BYPASS_IP" != "$LAN_IP" ]; then
     # 主路由双路由：排除对端旁路由 IP，避免其查询被二次劫持
-    nft add rule inet dns_hijack prerouting ip saddr != $BYPASS_IP udp dport 53 redirect to :5353
-    nft add rule inet dns_hijack prerouting ip saddr != $BYPASS_IP tcp dport 53 redirect to :5353
+    nft add rule inet dns_hijack prerouting iifname "br-lan" ip saddr != $BYPASS_IP udp dport 53 redirect to :5353
+    nft add rule inet dns_hijack prerouting iifname "br-lan" ip saddr != $BYPASS_IP tcp dport 53 redirect to :5353
     logger -t dns-hijack "nftables DNS hijack applied (main router, exclude bypass: $BYPASS_IP)"
 else
-    # 旁路由/单路由(无排除项)：IPv4 全量劫持
-    nft add rule inet dns_hijack prerouting udp dport 53 redirect to :5353
-    nft add rule inet dns_hijack prerouting tcp dport 53 redirect to :5353
+    # 旁路由/单路由：br-lan 入向 IPv4 全量劫持
+    nft add rule inet dns_hijack prerouting iifname "br-lan" udp dport 53 redirect to :5353
+    nft add rule inet dns_hijack prerouting iifname "br-lan" tcp dport 53 redirect to :5353
     logger -t dns-hijack "nftables DNS hijack applied (all IPv4, no exclusion)"
 fi
 
-# IPv6 明文 DNS 一并重定向(旁路由多为 IPv4，不作排除)
-nft add rule inet dns_hijack prerouting meta nfproto ipv6 udp dport 53 redirect to :5353
-nft add rule inet dns_hijack prerouting meta nfproto ipv6 tcp dport 53 redirect to :5353
+# IPv6 明文 DNS 同劫持(br-lan 入向)
+nft add rule inet dns_hijack prerouting iifname "br-lan" meta nfproto ipv6 udp dport 53 redirect to :5353
+nft add rule inet dns_hijack prerouting iifname "br-lan" meta nfproto ipv6 tcp dport 53 redirect to :5353

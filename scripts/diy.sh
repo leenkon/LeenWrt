@@ -142,7 +142,7 @@ before)
     ;;
 
 ruby)
-    # ruby YJIT 解耦：分支头 lang/ruby 默认 RUBY_ENABLE_YJIT=y 拉起 rust/host，rustc 预编译 LLVM 404 致构建挂；OpenClash 依赖 ruby(不可选)，仅 WITH_OC 时调用
+    # ruby YJIT 解耦：分支头 lang/ruby 默认拉起 rust/host（rustc LLVM 404 致构建挂）；OpenClash 依赖 ruby 不可选，仅 WITH_OC 时调用
     echo "[diy] ruby: 解耦 YJIT 与 rust/host（x86_64/aarch64）"
     RUBY_DIR="$PROJECT_ROOT/openwrt/feeds/packages/lang/ruby"
     if [ -d "$RUBY_DIR" ]; then
@@ -309,8 +309,7 @@ uci commit firewall
 EOF
 )
 
-    # full 共用：LAN 区三态 ACCEPT + lan->wan forwarding + wan mtu_fix。
-    # 不依赖上游默认 firewall，避免非空配置下 lan input=REJECT 挡掉 LuCI(后台) 且无 lan->wan 转发导致不能上网(bypass 分支改用 lan masq=1 实现同目的)。
+    # full 共用：LAN 三态 ACCEPT + lan->wan 转发 + wan mtu_fix（不依赖上游默认 firewall，避免 lan input=REJECT 挡 LuCI 或无转发）
     LAN_FORWARD_BLK=$(cat <<'EOF'
 LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 [ -n "$LAN_FW" ] && {
@@ -355,7 +354,7 @@ uci set dhcp.@dnsmasq[0].sequential_ip='1'
 EOF
 )
 
-    # WAN 段(PPPoE/DHCP)提前生成避免重复；WAN 设备显式绑 eth0(前口)：25.12 generic x86 的 board.d 默认 eth0=LAN/eth1=WAN，与本网前口=WAN 相反，故强制绑定。
+    # 主路由 WAN：eth0=前口(WAN)，其余 eth 桥 br-lan 作 LAN（参考 immortalWrt 标准端口约定，不自动探测）
     if [ "$PROFILE_TYPE" = "full" ]; then
         if [ -n "$PPPOE_USERNAME" ]; then
             u=$(_escape_uci "$PPPOE_USERNAME"); p=$(_escape_uci "$PPPOE_PASSWORD")
@@ -374,8 +373,8 @@ EOT
         else
             WAN_BLK=$(cat <<EOT
 uci set network.wan.proto='dhcp'
-uci set network.wan.peerdns='1'
 uci set network.wan.device='eth0'
+uci set network.wan.peerdns='1'
 uci set network.wan.mtu_fix='1'
 uci set network.wan6.proto='dhcpv6'
 uci set network.wan6.reqaddress='try'
@@ -383,8 +382,7 @@ uci set network.wan6.reqprefix='auto'
 EOT
 )
         fi
-        # 端口统一处理：前口 eth0=WAN(由 WAN_BLK 绑定)；其余 eth* 桥接为 LAN(br-lan)。
-        # board.d 默认(generic x86) eth0=LAN/eth1=WAN 与本机"前口=WAN"相反，故 lan 须挪到其余口(避免 lan/wan 同占 eth0 冲突)。
+        # 端口：eth0=WAN 不进桥；其余 eth* 桥接 br-lan 作 LAN（避免 lan/wan 争 eth0）
         PORT_BLK=$(cat <<'EOT'
 _lan_eth=$(ls /sys/class/net 2>/dev/null | grep -E '^eth[0-9]+$' | grep -v '^eth0$' | sort -V)
 uci set network.br_lan=device
@@ -406,6 +404,28 @@ EOT
 
     if [ "$PROFILE_TYPE" = "bypass" ]; then
         gw_esc=$(_escape_uci "$CUSTOM_GATEWAY")
+        # 旁路由 DNS 上游：OC 开则 dnsmasq 前置 OC(:7874)，否则直连公网；ADGH 以 dnsmasq 为上游不硬依赖 OC；OC/ADGH 按编译开关独立（与 full 一致）
+        BYPASS_DNS_SERVERS="$DNS_MAIN $DNS_BACKUP"
+        [ "$WITH_OC" = "1" ] && BYPASS_DNS_SERVERS="127.0.0.1#7874 $DNS_MAIN $DNS_BACKUP"
+        BYPASS_DNS_SERVER_LINES=""
+        for s in $BYPASS_DNS_SERVERS; do
+            BYPASS_DNS_SERVER_LINES="${BYPASS_DNS_SERVER_LINES}uci add_list dhcp.@dnsmasq[0].server='$s'
+"
+        done
+        # OC/ADGH 按需注入；ADGH 启用时写 dns_hijack，由 init.d 监控循环布表
+        BYPASS_OC_ADGH_BLK=""
+        if [ "$WITH_OC" = "1" ]; then
+            BYPASS_OC_ADGH_BLK="${BYPASS_OC_ADGH_BLK}${OC_CONFIG_BLK}
+"
+        fi
+        if [ "$NO_ADGH" != "1" ]; then
+            BYPASS_OC_ADGH_BLK="${BYPASS_OC_ADGH_BLK}${ADGH_ENABLE_BLK}
+uci -q delete adguardhome.config.dns_hijack
+uci set adguardhome.config.dns_hijack='$WITH_DNS_HIJACK'
+$BYPASS_IP_UCI_BLK
+uci commit adguardhome
+"
+        fi
         cat >> "$OUT" <<EOT
 $IP_FORWARD_LN
 uci set network.lan.proto='static'
@@ -445,10 +465,9 @@ uci set dhcp.lan6.ignore='1'
 uci -q delete dhcp.@dnsmasq[0].port
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
-# 旁路由 dnsmasq 常驻 :53 兜底(零抖动)；ADGH 改绑 :5353，不再让出 :53。
+# 旁路由 dnsmasq :53 兜底；ADGH 改绑 :5353；上游按 BYPASS_DNS_SERVER_LINES（OC 开前置 OC:7874）
 uci -q delete dhcp.@dnsmasq[0].server
-uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
-uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
+$BYPASS_DNS_SERVER_LINES
 uci set dhcp.@dnsmasq[0].noresolv='1'
 uci commit dhcp
 
@@ -465,12 +484,7 @@ WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 _i=0; while [ \$_i -lt 16 ] && uci -q delete firewall.@forwarding[0]; do _i=\$((\$_i+1)); done
 uci commit firewall
 
-$OC_CONFIG_BLK
-$ADGH_ENABLE_BLK
-uci -q delete adguardhome.config.dns_hijack
-uci set adguardhome.config.dns_hijack='$WITH_DNS_HIJACK'
-$BYPASS_IP_UCI_BLK
-uci commit adguardhome
+$BYPASS_OC_ADGH_BLK
 EOT
     elif [ "$PROFILE_TYPE" = "full" ]; then
         cat >> "$OUT" <<EOT
@@ -483,9 +497,9 @@ $IP_FORWARD_LN
 $DHCP_COMMON_BLK
 $LAN_FORWARD_BLK
 EOT
-        # 零抖动 DNS：dnsmasq 常驻 :53 兜底；ADGH(:5353)/OC(:7874) 按需叠加。仅"ADGH关+OC开"时 dnsmasq 上游前置 OC(:7874)
+        # 零抖动 DNS：dnsmasq :53 兜底；ADGH(:5353) 以 dnsmasq 为上游；OC 开则 dnsmasq 上游前置 OC(:7874)
         DNS_SERVERS="$DNS_MAIN $DNS_BACKUP"
-        [ "$NO_ADGH" = "1" ] && [ "$WITH_OC" = "1" ] && DNS_SERVERS="127.0.0.1#7874 $DNS_MAIN $DNS_BACKUP"
+        [ "$WITH_OC" = "1" ] && DNS_SERVERS="127.0.0.1#7874 $DNS_MAIN $DNS_BACKUP"
         {
             echo "uci -q delete dhcp.@dnsmasq[0].port"
             echo "uci -q delete dhcp.@dnsmasq[0].server"
@@ -509,7 +523,7 @@ EOT
             cat >> "$OUT" <<EOT
 $ADGH_ENABLE_BLK
 EOT
-            # dns_hijack 写入 adguardhome config，由 init.d 监控循环在 ADGH 监听:5353 后布表/停时清表(零抖动)；=0 时改用 REJECT 强制走路由器 DNS
+            # dns_hijack 写 uci，由 init.d 监控循环按 ADGH 生命周期布/清表；=0 时改用 REJECT 强制走路由器 DNS
             cat >> "$OUT" <<EOT
 uci -q delete adguardhome.config.dns_hijack
 uci set adguardhome.config.dns_hijack='$WITH_DNS_HIJACK'

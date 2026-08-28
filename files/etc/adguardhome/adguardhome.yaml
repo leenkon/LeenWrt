@@ -10,11 +10,12 @@ dns:
   bind_hosts:
     - 0.0.0.0
     - "::"
+  # ADGH 仅以 dnsmasq(:53) 为唯一上游；OC 集成交由 dnsmasq 层(server=127.0.0.1#7874 由 uci-defaults 按 OC 是否安装动态注入)决定。
+  # 这样 ADGH 不硬依赖 OC：OC 未装/宕时 ADGH 直走 dnsmasq→公网 DNS，无 3s 超时惩罚；OC 在时 dnsmasq 转发 OC 做域名分流。
   upstream_dns:
-    - "127.0.0.1:7874"        # 主上游：OpenClash（域名分流/代理）。OC 停止/崩溃时 ADGH 自动跳过，改走下一条
-    - "127.0.0.1:53"          # 兜底（不依赖 OC）：本地 dnsmasq :53（常驻兜底），纯阿里云 DNS 223.5.5.5/223.6.6.6（明文）；OC 挂了也不影响普通解析
-  fallback_dns: []            # 兜底已并入 upstream_dns 第二条起，避免双路径重复
-  parallel_requests: false    # 先走 OC；OC 不可达才顺序尝试直连兜底（保证 OC 在时由其做域名分流，不泄漏）
+    - "127.0.0.1:53"          # 本地 dnsmasq :53 常驻兜底（其上游由固件配置设为 OC:7874 + 阿里云，或仅阿里云）
+  fallback_dns: []            # 兜底已并入 upstream_dns，避免双路径重复
+  parallel_requests: false
   upstream_timeout: 3s
   cache_enabled: true
   cache_size: 500000

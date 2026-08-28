@@ -13,7 +13,7 @@ on:
       with_fwx: {description: 'fwx应用过滤', type: boolean, default: true}
       with_oc: {description: 'OpenClash', type: boolean, default: true}
       with_adgh: {description: 'AdGuardHome', type: boolean, default: true}
-      dns_hijack: {description: 'DNS劫持(关则仅 Full+ADGH 才 REJECT 强制路由器DNS；Mini 恒开)', type: boolean, default: true}
+      dns_hijack: {description: 'DNS劫持(开=透明重定向到 ADGH(:5353)；关=不劫持，仅 Full+ADGH 改 REJECT 强制路由器DNS)', type: boolean, default: true}
       root_password: {description: 'root密码', type: string, default: ''}
 permissions:
   contents: write
@@ -78,10 +78,9 @@ jobs:
           esac
           MAIN_VER="${{ github.event.inputs.version }}"; MAIN_VER="${MAIN_VER%.*}"
 
-          # OC/ADGH：旁路由(Mini)固定启用；完整路由(Full)由 Workflow 勾选决定
+          # OC/ADGH：由 Workflow 勾选决定（Full/Mini 一致，旁路由也可独立开关）
           WITH_OC=${{ github.event.inputs.with_oc }}
           WITH_ADGH=${{ github.event.inputs.with_adgh }}
-          [[ "$RUN_TYPE" == "bypass" ]] && { WITH_OC=true; WITH_ADGH=true; }
           NO_ADGH="false"; [ "$WITH_ADGH" = "true" ] || NO_ADGH="true"
 
           WITH_FWX=${{ github.event.inputs.with_fwx }}
@@ -183,22 +182,18 @@ jobs:
           mkdir -p files/etc/firstboot-pkgs/apps
           cp -f $GITHUB_WORKSPACE/apps/*.apk files/etc/firstboot-pkgs/apps/ 2>/dev/null || true
 
-          # 按勾选删除不需要的静态文件（对齐 build.sh）。
-          # 旁路由固定 ADGH+OC 且劫持恒开启，dns-hijack 保留，与主路由走同一零抖动拓扑。
-          case "$RUN_TYPE" in
-            full)
-              if [ "$WITH_ADGH" != "true" ]; then
-                rm -rf files/etc/adguardhome
-                rm -f files/usr/bin/AdGuardHome files/etc/init.d/adguardhome files/etc/config/adguardhome
-              fi
-              if [ "$WITH_ADGH" != "true" ] || [ "${{ github.event.inputs.dns_hijack }}" != "true" ]; then
-                rm -f files/usr/sbin/dns-hijack
-              fi
-              if [ "$WITH_OC" != "true" ]; then
-                rm -rf files/etc/openclash
-              fi
-              ;;
-          esac
+          # 按勾选删除不需要的静态文件（Full/Mini 一致）：未勾 ADGH/OC 则移除对应静态文件，避免固件残留死配置。
+          # dns-hijack 仅在 ADGH 启用且劫持开启时保留；脚本由 init.d 监控循环触发，未装 ADGH 时自动跳过。
+          if [ "$WITH_ADGH" != "true" ]; then
+            rm -rf files/etc/adguardhome
+            rm -f files/usr/bin/AdGuardHome files/etc/init.d/adguardhome files/etc/config/adguardhome
+          fi
+          if [ "$WITH_ADGH" != "true" ] || [ "${{ github.event.inputs.dns_hijack }}" != "true" ]; then
+            rm -f files/usr/sbin/dns-hijack
+          fi
+          if [ "$WITH_OC" != "true" ]; then
+            rm -rf files/etc/openclash
+          fi
           find files/ -type f \( -path "*/sbin/*" -o -path "*/init.d/*" -o -path "*/hotplug.d/*" -o -path "*/uci-defaults/*" -o -name "*.sh" \) -exec chmod 755 {} + 2>/dev/null || true
           make defconfig && make download && make clean
           make -j$(nproc) || make -j1 V=s
