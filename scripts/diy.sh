@@ -564,10 +564,10 @@ chmod 755 /etc/init.d/cpufreq-perf
 /etc/init.d/cpufreq-perf enable
 /etc/init.d/cpufreq-perf start
 
-# 首启装 apps/ 的 .apk：须显式 start——rcS 的 glob 已展开，新 enable 的 S99 服务本次启动不会被遍历到
+# 首启装 apps/ 的 .apk：本次启动由 /etc/rc.local 在系统就绪后触发（早期 PATH 不含 /usr/bin）；
+# enable 仅备下次启动兜底（rcS 的 glob 已展开，本次启动不会被遍历到）
 chmod 755 /etc/init.d/firstboot-pkgs
 /etc/init.d/firstboot-pkgs enable
-/etc/init.d/firstboot-pkgs start
 
 # 主题默认浅色（覆盖 fwx 出厂 theme_mode=1）
 if uci -q get fwx.global >/dev/null 2>&1; then

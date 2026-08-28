@@ -3,7 +3,7 @@
 START=99
 STOP=10
 
-# uci-defaults(S10boot) 阶段 PATH 可能缺 /usr/bin，而 apk 在 /usr/bin/apk（缺则 rc=127）
+# PATH 兜底：apk 在 /usr/bin，执行环境 PATH 缺它则 command not found(rc=127)
 export PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 
 install_offline() {

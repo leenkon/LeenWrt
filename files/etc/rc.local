@@ -1,0 +1,7 @@
+# 首启离线安装 apps/ 的 .apk
+# 由 done(S95) 在系统就绪后调用：此时 PATH 完整(apk 在 /usr/bin) 且网络已就绪。
+# 仅 enable 不够——rcS 的 glob 在启动时已展开，新 enable 的 S99 服务本次启动不会被遍历。
+# firstboot-pkgs 全部装成功后会自清理，故仅首次生效；失败则保留，下次启动再试。
+[ -x /etc/init.d/firstboot-pkgs ] && /etc/init.d/firstboot-pkgs start
+
+exit 0
