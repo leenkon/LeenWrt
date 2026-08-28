@@ -564,8 +564,11 @@ chmod 755 /etc/init.d/cpufreq-perf
 /etc/init.d/cpufreq-perf enable
 /etc/init.d/cpufreq-perf start
 
-# 首启离线安装 apps/ 的 .apk：仅 enable，由 rc.d(S99) 启动后期执行(避免早期 apk 库未就绪)
+# 首启离线安装 apps/ 的 .apk：enable 后须显式 start——rcS 启动时 glob 已展开，
+# uci-defaults(S10boot 阶段) 新 enable 的 S99 服务本次启动不会被遍历到；start 内部后台执行不阻塞
+chmod 755 /etc/init.d/firstboot-pkgs
 /etc/init.d/firstboot-pkgs enable
+/etc/init.d/firstboot-pkgs start
 
 # 主题默认浅色（覆盖 fwx 出厂 theme_mode=1）
 if uci -q get fwx.global >/dev/null 2>&1; then
