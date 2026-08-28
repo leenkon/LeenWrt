@@ -272,11 +272,10 @@ uci commit openclash
 EOF
 )
 
-    # 带 ADGH 时启用二进制 AdGuardHome（init.d 经 files/ 注入；Procd 脚本需 enable 才开机自启）
+    # ADGH 仅 enable：真正 start 由 init.d 的 interface-up trigger 驱动（uci-defaults 阶段接口未 up，勿 early 调 procd）
     ADGH_ENABLE_BLK=$(cat <<'EOF'
 chmod 755 /etc/init.d/adguardhome
 /etc/init.d/adguardhome enable
-/etc/init.d/adguardhome start
 EOF
 )
 
@@ -310,8 +309,8 @@ uci commit firewall
 EOF
 )
 
-    # full 共用：LAN 区三态 ACCEPT + lan->wan forwarding + wan mtu_fix（与 bypass 分支一致）。
-    # 不依赖上游默认 firewall，避免非空配置下 lan input=REJECT 挡掉 LuCI(后台) 且无 lan->wan 转发导致不能上网。
+    # full 共用：LAN 区三态 ACCEPT + lan->wan forwarding + wan mtu_fix。
+    # 不依赖上游默认 firewall，避免非空配置下 lan input=REJECT 挡掉 LuCI(后台) 且无 lan->wan 转发导致不能上网(bypass 分支改用 lan masq=1 实现同目的)。
     LAN_FORWARD_BLK=$(cat <<'EOF'
 LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 [ -n "$LAN_FW" ] && {
@@ -321,7 +320,7 @@ LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 }
 WAN_FW=$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 [ -n "$WAN_FW" ] && uci set ${WAN_FW}.mtu_fix='1'
-while uci -q delete firewall.@forwarding[0]; do :; done
+_i=0; while [ $_i -lt 16 ] && uci -q delete firewall.@forwarding[0]; do _i=$((_i+1)); done
 uci add firewall forwarding
 uci set firewall.@forwarding[-1].src='lan'
 uci set firewall.@forwarding[-1].dest='wan'
@@ -338,7 +337,6 @@ uci set upnpd.config.external_iface='wan'
 uci set upnpd.config.secure='0'
 uci commit upnpd
 /etc/init.d/miniupnpd enable
-/etc/init.d/miniupnpd restart
 EOF
 )
 
@@ -357,7 +355,7 @@ uci set dhcp.@dnsmasq[0].sequential_ip='1'
 EOF
 )
 
-    # WAN 段(PPPoE/DHCP)提前生成避免重复；WAN 设备不写死，由 board.d 首启探测(eth1 存在则作 WAN)。
+    # WAN 段(PPPoE/DHCP)提前生成避免重复；WAN 设备显式绑 eth0(前口)：25.12 generic x86 的 board.d 默认 eth0=LAN/eth1=WAN，与本网前口=WAN 相反，故强制绑定。
     if [ "$PROFILE_TYPE" = "full" ]; then
         if [ -n "$PPPOE_USERNAME" ]; then
             u=$(_escape_uci "$PPPOE_USERNAME"); p=$(_escape_uci "$PPPOE_PASSWORD")
@@ -367,6 +365,7 @@ uci set network.wan.username='$u'
 uci set network.wan.password='$p'
 uci set network.wan.ipv6='auto'
 uci set network.wan.peerdns='1'
+uci set network.wan.device='eth0'
 # PPPoE MTU 1492，缺 MSS 钳制会导致大包被 PMTU 黑洞丢弃(已连接但打不开网页)
 uci set network.wan.mtu_fix='1'
 uci -q delete network.wan6
@@ -376,6 +375,7 @@ EOT
             WAN_BLK=$(cat <<EOT
 uci set network.wan.proto='dhcp'
 uci set network.wan.peerdns='1'
+uci set network.wan.device='eth0'
 uci set network.wan.mtu_fix='1'
 uci set network.wan6.proto='dhcpv6'
 uci set network.wan6.reqaddress='try'
@@ -383,6 +383,22 @@ uci set network.wan6.reqprefix='auto'
 EOT
 )
         fi
+        # 端口统一处理：前口 eth0=WAN(由 WAN_BLK 绑定)；其余 eth* 桥接为 LAN(br-lan)。
+        # board.d 默认(generic x86) eth0=LAN/eth1=WAN 与本机"前口=WAN"相反，故 lan 须挪到其余口(避免 lan/wan 同占 eth0 冲突)。
+        PORT_BLK=$(cat <<'EOT'
+_lan_eth=$(ls /sys/class/net 2>/dev/null | grep -E '^eth[0-9]+$' | grep -v '^eth0$' | sort -V)
+uci set network.br_lan=device
+uci set network.br_lan.name='br-lan'
+uci set network.br_lan.type='bridge'
+uci -q delete network.br_lan.ports
+for _e in $_lan_eth; do uci add_list network.br_lan.ports="$_e"; done
+uci set network.lan.device='br-lan'
+uci -q delete network.lan.type
+uci -q delete network.lan.ports
+uci -q delete network.lan.ifname
+uci commit network
+EOT
+)
     fi
 
     echo '#!/bin/sh' > "$OUT"
@@ -403,6 +419,26 @@ uci -q delete network.lan6
 uci -q delete network.wan
 uci -q delete network.wan6
 uci commit network
+
+# 旁路由：所有网口桥接为 LAN，重建 br-lan（与 LeenWrt2 对齐；全口 LAN 可插任意口）
+_fw_all=\$(ls /sys/class/net 2>/dev/null | grep -E '^eth[0-9]+\$' | sort -V)
+if [ -n "\$_fw_all" ]; then
+  for _d in \$(uci show network 2>/dev/null | sed -n "s/^\(\network\.[^.]*\)\.name='br-lan'\$/\1/p"); do
+    uci -q delete "\$_d"
+  done
+  uci set network.br_lan=device
+  uci set network.br_lan.name='br-lan'
+  uci set network.br_lan.type='bridge'
+  uci -q delete network.br_lan.ports
+  for _e in \$_fw_all; do
+    uci add_list network.br_lan.ports="\$_e"
+  done
+  uci set network.lan.device='br-lan'
+  uci -q delete network.lan.type
+  uci -q delete network.lan.ports
+  uci -q delete network.lan.ifname
+  uci commit network
+fi
 
 uci set dhcp.lan.ignore='1'
 uci set dhcp.lan6.ignore='1'
@@ -426,7 +462,7 @@ WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
     uci set \${WAN_FW}.network=''
     uci set \${WAN_FW}.masq='0'
 }
-while uci -q delete firewall.@forwarding[0]; do :; done
+_i=0; while [ \$_i -lt 16 ] && uci -q delete firewall.@forwarding[0]; do _i=\$((\$_i+1)); done
 uci commit firewall
 
 $OC_CONFIG_BLK
@@ -439,6 +475,7 @@ EOT
     elif [ "$PROFILE_TYPE" = "full" ]; then
         cat >> "$OUT" <<EOT
 $WAN_BLK
+$PORT_BLK
 $LAN_WAN_COMMON_BLK
 
 $IP_FORWARD_LN

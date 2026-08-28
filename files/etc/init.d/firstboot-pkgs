@@ -8,10 +8,10 @@ install_offline() {
     local ok=1
     for f in /etc/firstboot-pkgs/apps/*.apk; do
         [ -f "$f" ] || continue
-        # 首启早期 apk 库可能未就绪，重试 5 次(每次 5s)
+        # 离线装本地 .apk：--no-network 防远程解析挂起；timeout 90 兜底 apk 异常死锁；失败重试 5 次(每次 5s)
         local i rc=1
         for i in 1 2 3 4 5; do
-            apk --allow-untrusted add "$f" >/dev/null 2>&1
+            timeout 90 apk --allow-untrusted --no-network add "$f" >/dev/null 2>&1
             rc=$?
             [ $rc -eq 0 ] && break
             logger -t firstboot-pkgs "安装 $f 第 $i 次失败(rc=$rc)，5s 后重试"

@@ -55,13 +55,12 @@ start_service() {
 	procd_set_param respawn
 	procd_close_instance
 
-	# 劫持监控循环(零抖动)：ADGH :5353 监听即布表强制过滤，失联即清表回退 dnsmasq :53。
-	# 与 ADGH(:5353)/dnsmasq(:53) 不同端口，清表不抢端口，故可安全周期运行(无 flap)。
+	# 零抖动劫持监控循环：ADGH :5353 监听即布表、失联即清表回退 dnsmasq :53；timeout 30 包裹防 dns-hijack 僵死
 	local dhijack
 	config_get_bool dhijack config dns_hijack 1
 	if [ "$dhijack" = "1" ] && [ -x /usr/sbin/dns-hijack ]; then
 		pkill -f "/usr/sbin/dns-hijack" 2>/dev/null   # 防重复循环
-		( while true; do /usr/sbin/dns-hijack; sleep 5; done ) &
+		( while true; do timeout 30 /usr/sbin/dns-hijack; sleep 5; done ) &
 	fi
 }
 
