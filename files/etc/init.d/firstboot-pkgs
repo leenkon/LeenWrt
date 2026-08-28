@@ -3,8 +3,7 @@
 START=99
 STOP=10
 
-# 由 uci-defaults(S10boot) 触发，该阶段 PATH 可能不含 /usr/bin，而 apk 在 /usr/bin/apk，
-# 不补全会 command not found(rc=127)
+# uci-defaults(S10boot) 阶段 PATH 可能缺 /usr/bin，而 apk 在 /usr/bin/apk（缺则 rc=127）
 export PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 
 install_offline() {
@@ -12,7 +11,7 @@ install_offline() {
     local ok=1
     for f in /etc/firstboot-pkgs/apps/*.apk; do
         [ -f "$f" ] || continue
-        # 离线装本地 .apk：--no-network 防远程解析(不走网络，无需等网就绪)；失败重试 5 次
+        # 本地 .apk 离线装：--no-network 不走网络(无需等网就绪)，失败重试 5 次
         local i rc=1 log=/tmp/.firstboot-pkgs.log
         for i in 1 2 3 4 5; do
             apk --allow-untrusted --no-network add "$f" >"$log" 2>&1

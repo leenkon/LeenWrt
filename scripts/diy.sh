@@ -354,7 +354,7 @@ uci set dhcp.@dnsmasq[0].sequential_ip='1'
 EOF
 )
 
-    # 主路由端口：WAN 锁定 eth1（本机物理前口在系统中映射为 eth1，非 eth0）；其余 eth* 桥 br-lan 作 LAN
+    # 主路由端口：WAN 锁 eth1（本机物理前口映射为 eth1，非 eth0）；其余 eth* 桥 br-lan
     if [ "$PROFILE_TYPE" = "full" ]; then
         if [ -n "$PPPOE_USERNAME" ]; then
             u=$(_escape_uci "$PPPOE_USERNAME"); p=$(_escape_uci "$PPPOE_PASSWORD")
@@ -564,8 +564,7 @@ chmod 755 /etc/init.d/cpufreq-perf
 /etc/init.d/cpufreq-perf enable
 /etc/init.d/cpufreq-perf start
 
-# 首启离线安装 apps/ 的 .apk：enable 后须显式 start——rcS 启动时 glob 已展开，
-# uci-defaults(S10boot 阶段) 新 enable 的 S99 服务本次启动不会被遍历到；start 内部后台执行不阻塞
+# 首启装 apps/ 的 .apk：须显式 start——rcS 的 glob 已展开，新 enable 的 S99 服务本次启动不会被遍历到
 chmod 755 /etc/init.d/firstboot-pkgs
 /etc/init.d/firstboot-pkgs enable
 /etc/init.d/firstboot-pkgs start
