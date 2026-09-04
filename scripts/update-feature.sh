@@ -12,8 +12,9 @@ OAF_FEATURE_BIN="${OAF_FEATURE_BIN:-package/OpenAppFilter/open-app-filter/files/
 OAF_ICONS_DIR="${OAF_ICONS_DIR:-$ROOT/appfilter-assets/oaf-icons}"
 
 PY="$(command -v python3 || command -v python || true)"
-[ -x "$FEATURE_PY" ] || { echo "[feature] ERR: 缺 $FEATURE_PY"; exit 1; }
-[ -n "$PY" ] || { echo "[feature] ERR: 未找到 python3"; exit 1; }
+# 特征库刷新是尽力而为：工具或 python 缺失时降级（保留 OAF 包内样板），不阻断整构建
+[ -x "$FEATURE_PY" ] || { echo "[feature] WARN: 缺 $FEATURE_PY，跳过特征库刷新（保留 OAF 包内样板，离线降级）"; exit 0; }
+[ -n "$PY" ] || { echo "[feature] WARN: 未找到 python3，跳过特征库刷新（离线降级）"; exit 0; }
 
 # 非 OAF 构建（未克隆）→ 跳过
 [ -f "$OAF_FEATURE_BIN" ] || { echo "[feature] WARN: 未找到 $OAF_FEATURE_BIN（OAF 未克隆？），跳过"; exit 0; }
