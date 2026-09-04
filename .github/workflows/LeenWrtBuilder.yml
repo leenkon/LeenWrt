@@ -138,16 +138,15 @@ jobs:
             timeout 180 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
             echo "[build] OAF 上游: $(git -C package/OpenAppFilter log -1 --format='%h %ad' --date=short)"
 
-            # 先刷新特征库+图标（update-feature.sh 会更新本地图标库），再复制注入
-            chmod +x $GITHUB_WORKSPACE/scripts/update-feature.sh
-            $GITHUB_WORKSPACE/scripts/update-feature.sh
+            # 特征库不在构建期拉取（CI 访问 api.openappfilter.com 不稳且易 403）；
+            # 改为设备首启经 OAF 自带在线更新客户端（ubus fwx，UA 正确）自动拉最新免费版（diy.sh 注入 rc.local）。
 
-            # 图标注入：LuCI 读 resources/oaf/app_icons/<appId>.png
+            # 图标注入：LuCI 读 resources/oaf/app_icons/<appId>.png（vendored 静态缓存；设备首启自动更新会一并刷新）
             OAF_ICONS="$GITHUB_WORKSPACE/appfilter-assets/oaf-icons"
             OAF_ICON_DST="package/OpenAppFilter/luci-app-oaf/htdocs/luci-static/resources/oaf/app_icons"
             if [ -d "$OAF_ICONS" ] && [ -d "$OAF_ICON_DST" ]; then
               cp -rf "$OAF_ICONS"/. "$OAF_ICON_DST"/
-              echo "[build] 已注入 OAF 应用图标 $(ls "$OAF_ICONS" | wc -l) 个（随 feature.bin 在线刷新）"
+              echo "[build] 已注入 OAF 应用图标 $(ls "$OAF_ICONS" | wc -l) 个"
             else
               echo "[build] 警告: OAF 图标资源缺失（$OAF_ICONS 或 $OAF_ICON_DST 不存在），跳过注入（LuCI 将用首字母图标兜底）"
             fi

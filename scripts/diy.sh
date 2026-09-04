@@ -620,9 +620,12 @@ EOT
         RC_LOCAL="$FB_DIR/etc/rc.local"
         mkdir -p "$(dirname "$RC_LOCAL")"
         [ -f "$RC_LOCAL" ] || printf 'exit 0\n' > "$RC_LOCAL"
+        # 特征库首启自动更新已确定走 rc.local；清理任何旧版 uci-defaults 残留避免重复触发
+        rm -f "$FB_DIR/etc/uci-defaults/zzz-oaf-feature-autoupdate" 2>/dev/null || true
         if ! grep -q "LeenWrt OAF" "$RC_LOCAL"; then
             OAF_RC_BLK=$(cat <<'EOF'
-# ===== LeenWrt OAF 设置（appfilter.init START=96 已生成 /etc/config/fwx，rc.local 晚于它）=====
+# ===== LeenWrt OAF（appfilter.init START=96 已生成 /etc/config/fwx 并注册 fwx ubus；
+#        rc.local 为启动末步，故此处可安全改配置 / 触发在线更新）=====
 [ -f /etc/config/fwx ] && {
     OAF_CHANGED=""
     [ "$(uci -q get fwx.global.theme_mode)" != "0" ] && { uci set fwx.global.theme_mode='0'; OAF_CHANGED=1; }
@@ -630,13 +633,34 @@ EOT
     [ "$(uci -q get fwx.appfilter.enable)" != "1" ] && { uci set fwx.appfilter.enable='1'; OAF_CHANGED=1; }
     [ -n "$OAF_CHANGED" ] && { uci commit fwx; logger -t oaf "已应用 LeenWrt 设置(浅色/网关模式/启用过滤)"; }
 }
+# ===== LeenWrt OAF 首启自动更新特征库到官方最新免费版（OAF 自带在线更新客户端，UA 正确）=====
+# rc.local 晚于 S96 appfilter 与网络起来，fwx ubus / 网关已就绪；成功后写 flag，仅跑一次（失败则下次启动重试）
+if [ ! -f /etc/oaf-feature-autoupdate.done ]; then
+  (
+    for i in $(seq 1 30); do ping -c1 -W2 223.5.5.5 >/dev/null 2>&1 && break; sleep 2; done
+    ubus list fwx >/dev/null 2>&1 || exit 0
+    list=$(ubus call fwx common '{"api":"get_feature_online_list","data":{"refresh":1,"lang":"cn"}}' 2>/dev/null)
+    [ -n "$list" ] || exit 0
+    ids=$(echo "$list" | jsonfilter -e '@.data.files[@.free=1].id' 2>/dev/null)
+    cnts=$(echo "$list" | jsonfilter -e '@.data.files[@.free=1].count' 2>/dev/null)
+    [ -n "$ids" ] || exit 0
+    tmp=$(mktemp -d)
+    printf '%s\n' "$ids" > "$tmp/ids"
+    printf '%s\n' "$cnts" > "$tmp/cnts"
+    best=$(paste -d' ' "$tmp/ids" "$tmp/cnts" 2>/dev/null | sort -k2 -n | tail -1 | awk '{print $1}')
+    rm -rf "$tmp"
+    if [ -n "$best" ] && ubus call fwx common "{\"api\":\"start_feature_online_update\",\"data\":{\"id\":\"$best\",\"lang\":\"cn\"}}" >/dev/null 2>&1; then
+      touch /etc/oaf-feature-autoupdate.done
+    fi
+  ) >/tmp/oaf-feature-autoupdate.log 2>&1 &
+fi
 EOF
 )
             # OAF 段置于首行：rc.local 后续还有 firstboot-pkgs（apk 安装耗时较久），先落地 OAF 设置
             { printf '%s\n' "$OAF_RC_BLK"; grep -v '^exit 0$' "$RC_LOCAL" 2>/dev/null; echo 'exit 0'; } > "$RC_LOCAL.new" \
                 && mv "$RC_LOCAL.new" "$RC_LOCAL"
             chmod 755 "$RC_LOCAL" 2>/dev/null || true
-            echo "[diy] 输出: $RC_LOCAL（已追加 OAF 设置）"
+            echo "[diy] 输出: $RC_LOCAL（已追加 OAF 设置 + 特征库首启自动更新）"
         fi
     fi
 

@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
-"""OAF 特征库工具：feature.bin 校验、列表、抓取。
+"""OAF 特征库工具：feature.bin 校验、列表、抓取（可选手动工具，不参与 CI）。
 
 特征库格式（上游 open-app-filter/src/fwx_feature.c，密钥随源码公开）：
   24B 头 | magic "FWXB" | fmt=1 | alg=1(XTEA-CTR) | hdr_size=16b | plain_len=32b | crc32=32b | nonce=64b  (全 LE)
   负载   | 明文经 XTEA-CTR 加密，keystream = XTEA(nonce+i)，i 为 8 字节块序号（64 位递增，勿截断成 32 位）
   明文   | 特征文本行（含 #version / #format / `id~name:[...]`）；crc32 校验失败即视为损坏
 
-OAF 守护进程(oafd)启动即解密 /etc/fwxd/feature.bin 并装载，无需任何格式转换——
-本工具只负责从官方 API 取最新 feature.bin（免费档 token=0、free=1 包）并校验，直接投喂。
+oafd 启动即解密 /etc/fwxd/feature.bin 并装载，无需任何格式转换。
 
-子命令：verify / list / fetch
-仅依赖标准库；在 CI/host 运行即可。
+【生产环境】特征库**不在构建期从官方 API 拉取**（CI 访问 api.openappfilter.com 不稳且易 403）；
+设备首启经 OAF 自带在线更新客户端（ubus call fwx common，UA 正确）自动更新到最新免费版，
+逻辑由 diy.sh 注入 rc.local，见项目说明。
+
+【本工具】仅作可选手动工具（本机调试 / 固化较新特征库用）：verify 校验、list 列官方包、
+fetch 抓取最新 feature.bin（+ 图标）。fetch 写入路径由 -o 指定（默认当前目录 feature.bin）。
+所有在线请求均带 UA=fwxd-feature-update/1.0（与 OAF 源码一致，否则服务端 403）。
+
+仅依赖标准库。
 """
 import argparse
 import hashlib
@@ -34,6 +40,9 @@ MAX_SIZE = 20 * 1024 * 1024
 
 API_BASE = 'https://api.openappfilter.com'
 API_VERSION = 'v4.0'
+# 必须与 OAF 源码 fwx_feature_online.c:set_curl_options 的 UA 一致，
+# 否则 api.openappfilter.com 直接返回 403（服务端按 UA 放行 OAF 客户端）
+UA = 'fwxd-feature-update/1.0'
 
 
 def enc_block(v0, v1):
@@ -126,10 +135,14 @@ def device_model():
     return 'x86_64'
 
 
+def api_open(url, timeout=60):
+    req = urllib.request.Request(url, headers={'User-Agent': UA})
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
 def api_get(path, params):
     url = '%s%s?%s' % (API_BASE, path, urlencode(params))
-    req = urllib.request.Request(url, headers={'User-Agent': 'leanwrt-feature-tool/1.0'})
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with api_open(url) as r:
         return json.loads(r.read().decode('utf-8'))
 
 
@@ -150,7 +163,7 @@ def pick_free(files):
     free = [f for f in files if f.get('free') == 1]
     if not free:
         raise ValueError('特征库列表中没有免费(free=1)包；需订阅 token 或手动指定 --id')
-    free.sort(key=lambda f: (f.get('count', 0), f.get('size', 0)), reverse=True)
+    free.sort(key=lambda f: f.get('count', 0), reverse=True)
     return free[0]
 
 
@@ -159,8 +172,8 @@ def do_list(a):
     print('版本=%s 语言=%s 包数=%s' % (data.get('version'), data.get('lang'), data.get('count')))
     for f in data['files']:
         tag = '免费' if f.get('free') == 1 else '订阅'
-        print('  id=%-8s ver=%-8s 应用=%-4s 大小=%-7s [%s] %s' % (
-            f['id'], f['version'], f['count'], f['size'], tag, f.get('type', '')))
+        print('  id=%-8s ver=%-8s 应用=%-4s [%s] %s' % (
+            f.get('id', '?'), f.get('version', '?'), f.get('count', '?'), tag, f.get('type', '')))
     return 0
 
 
@@ -179,7 +192,7 @@ def do_fetch(a):
         params['lang'] = a.lang
     url = '%s/api/download_feature?%s' % (API_BASE, urlencode(params))
     print('拉取 %s' % url)
-    data = urllib.request.urlopen(url, timeout=a.timeout).read()
+    data = api_open(url, timeout=a.timeout).read()
 
     if data[:2] == b'\x1f\x8b':  # tar.gz：feature.bin + app_icons/
         import io
@@ -208,7 +221,7 @@ def do_fetch(a):
 
 
 def main():
-    p = argparse.ArgumentParser(description='OAF 特征库（feature.bin）校验与更新工具')
+    p = argparse.ArgumentParser(description='OAF 特征库（feature.bin）校验与更新工具（手动用，不参与 CI）')
     sub = p.add_subparsers(dest='cmd', required=True)
 
     v = sub.add_parser('verify', help='校验 feature.bin 并打印元信息')
