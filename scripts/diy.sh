@@ -613,19 +613,15 @@ EOT
     chmod 755 "$OUT"
     echo "[diy] 输出: $OUT"
 
-    # OAF 运行配置：/etc/config/fwx 由 appfilter.init 在 START=96 首次启动时生成（uci-defaults 早于它，
-    # 抢建该文件会让 init 的 ensure_default_configs 跳过，丢失 record/dashboard/advanced/macfilter 等默认段落），
-    # 故放在 rc.local（晚于 S96）覆盖出厂值：浅色主题 / 网关模式(0) / 启用过滤
+    # OAF 设置与特征库首启自动更新放 rc.local：appfilter.init(START=96) 首启才生成 /etc/config/fwx，
+    # uci-defaults 早于它，抢建会丢默认段落；rc.local 为启动末步，ubus/网络已就绪。
     if [ "$WITH_OAF" = "1" ]; then
         RC_LOCAL="$FB_DIR/etc/rc.local"
         mkdir -p "$(dirname "$RC_LOCAL")"
         [ -f "$RC_LOCAL" ] || printf 'exit 0\n' > "$RC_LOCAL"
-        # 特征库首启自动更新已确定走 rc.local；清理任何旧版 uci-defaults 残留避免重复触发
-        rm -f "$FB_DIR/etc/uci-defaults/zzz-oaf-feature-autoupdate" 2>/dev/null || true
         if ! grep -q "LeenWrt OAF" "$RC_LOCAL"; then
             OAF_RC_BLK=$(cat <<'EOF'
-# ===== LeenWrt OAF（appfilter.init START=96 已生成 /etc/config/fwx 并注册 fwx ubus；
-#        rc.local 为启动末步，故此处可安全改配置 / 触发在线更新）=====
+# LeenWrt OAF：出厂配置覆盖（浅色/网关模式/启用过滤）
 [ -f /etc/config/fwx ] && {
     OAF_CHANGED=""
     [ "$(uci -q get fwx.global.theme_mode)" != "0" ] && { uci set fwx.global.theme_mode='0'; OAF_CHANGED=1; }
@@ -633,8 +629,7 @@ EOT
     [ "$(uci -q get fwx.appfilter.enable)" != "1" ] && { uci set fwx.appfilter.enable='1'; OAF_CHANGED=1; }
     [ -n "$OAF_CHANGED" ] && { uci commit fwx; logger -t oaf "已应用 LeenWrt 设置(浅色/网关模式/启用过滤)"; }
 }
-# ===== LeenWrt OAF 首启自动更新特征库到官方最新免费版（OAF 自带在线更新客户端，UA 正确）=====
-# rc.local 晚于 S96 appfilter 与网络起来，fwx ubus / 网关已就绪；成功后写 flag，仅跑一次（失败则下次启动重试）
+# LeenWrt OAF：首启经自带在线客户端(ubus fwx, UA 正确)拉官方最新免费特征库；写 flag 仅跑一次，失败下次重试
 if [ ! -f /etc/oaf-feature-autoupdate.done ]; then
   (
     for i in $(seq 1 30); do ping -c1 -W2 223.5.5.5 >/dev/null 2>&1 && break; sleep 2; done
@@ -656,7 +651,7 @@ if [ ! -f /etc/oaf-feature-autoupdate.done ]; then
 fi
 EOF
 )
-            # OAF 段置于首行：rc.local 后续还有 firstboot-pkgs（apk 安装耗时较久），先落地 OAF 设置
+            # 置于首行：rc.local 末尾还有 firstboot-pkgs(apk 安装耗时较久)，先落地 OAF 设置
             { printf '%s\n' "$OAF_RC_BLK"; grep -v '^exit 0$' "$RC_LOCAL" 2>/dev/null; echo 'exit 0'; } > "$RC_LOCAL.new" \
                 && mv "$RC_LOCAL.new" "$RC_LOCAL"
             chmod 755 "$RC_LOCAL" 2>/dev/null || true
