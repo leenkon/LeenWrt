@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # sync-fwx.sh — 从 fanchmwrt 同步 fwx 组件与 fanchmwrt 系统主题到 LeenWrt（升级 fork 的 fwx / 主题）
-# 用法: scripts/sync-fwx.sh [branch|pinned-SHA]   默认 fanchmwrt-25.12.4；传 40 位 commit SHA 则钉死模式(按该 SHA 拉取四组件, 不追分支头/不改写钉点/950/README, 供 CI 构建)
+# 用法: scripts/sync-fwx.sh [branch|pinned-SHA]   默认 fanchmwrt-25.12.4；传 40 位 commit SHA 则钉死模式(按该 SHA 拉取四组件, 不追分支头/不改写钉点/950, 供 CI 构建)
 # 升级后请审阅 git diff，确认无误再提交推送。
 set -euo pipefail
 
@@ -12,7 +12,7 @@ BRANCH="${1:-${FWX_UPSTREAM_BRANCH:-fanchmwrt-25.12.4}}"
 SRC_PATH="${FWX_UPSTREAM_PATH:-package/fcm/fwx}"
 FWX_REPO="${FWX_UPSTREAM_REPO:-fanchmwrt/fanchmwrt}"
 # 钉死模式：若第一个参数是完整 commit SHA(40位hex)，按该 SHA 拉取四组件，不追分支头、
-# 不改写 FWX_COMMIT/THEME_COMMIT/950/README（供 CI 构建，避免 DPI 补丁上下文不符被静默跳过）
+# 不改写 FWX_COMMIT/THEME_COMMIT/950（供 CI 构建，避免 DPI 补丁上下文不符被静默跳过）
 PINNED=0
 if [[ "$BRANCH" =~ ^[0-9a-f]{40}$ ]]; then
   PINNED=1
@@ -22,7 +22,6 @@ RAW="https://raw.githubusercontent.com/$FWX_REPO/$BRANCH"
 API="https://api.github.com/repos/$FWX_REPO/git/trees/$BRANCH?recursive=1"
 LOCAL_FWX="$ROOT/feeds/fwx/fwx"
 FWX_PATCH_DIR="$ROOT/patches/fwx"
-README="$ROOT/feeds/fwx/README.md"
 
 echo "== sync-fwx: 从 fanchmwrt@$BRANCH 同步 fwx 组件 =="
 
@@ -132,14 +131,7 @@ for t in json.load(sys.stdin).get('tree',[]):
   done
 fi
 
-# 5) 刷新 README 版本锚点（钉死模式跳过，保留钉点注释）
-if [ "$PINNED" != "1" ] && [ -f "$README" ]; then
-  sed -i -E "s#^- 上游分支：.*#- 上游分支：$BRANCH#" "$README"
-  sed -i -E "s#^- 锚点 commit：.*#- 锚点 commit：$SHA  ($DATE)#" "$README"
-  echo "已刷新 README 版本锚点 -> $BRANCH @ $SHA ($DATE)"
-fi
-
-# 6) 刷新 cores/leenwrt.conf 的 FWX_COMMIT / THEME_COMMIT（钉死模式跳过，保持钉点单一来源）
+# 5) 刷新 cores/leenwrt.conf 的 FWX_COMMIT / THEME_COMMIT（钉死模式跳过，保持钉点单一来源）
 CONF="$ROOT/cores/leenwrt.conf"
 if [ "$PINNED" != "1" ] && [ -f "$CONF" ]; then
   sed -i -E "s#^FWX_COMMIT=.*#FWX_COMMIT=\"$SHA\"#" "$CONF"
