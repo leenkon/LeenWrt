@@ -587,41 +587,18 @@ EOT
     chmod 755 "$OUT"
     echo "[diy] 输出: $OUT"
 
-    # OAF 设置+特征库首启自动更新放 rc.local：appfilter.init(START=96) 首启才生成 /etc/config/fwx，uci-defaults 早于它抢建会丢段落；rc.local 为启动末步 ubus/网络已就绪；脚本成功后自清本段。
+    # OAF 首启特征库更新：独立 one-shot init.d（START=99，在 appfilter.init 之后）；成功后自清(disable+删本脚本)，
+    # 不改动 rc.local，零残留。OAF 与 fwx 互斥，故仅 WITH_OAF 时装入镜像。
     if [ "$WITH_OAF" = "1" ]; then
-        # OAF 首启特征库更新独立脚本：仅 OAF 构建装入镜像 /usr/sbin
-        OAF_UPDATER="$SCRIPT_DIR/oaf-feature-autoupdate.sh"
+        OAF_UPDATER="$SCRIPT_DIR/oaf-feature-autoupdate"
         if [ -f "$OAF_UPDATER" ]; then
-            mkdir -p "$FB_DIR/usr/sbin"
-            cp -f "$OAF_UPDATER" "$FB_DIR/usr/sbin/oaf-feature-autoupdate.sh"
-            chmod 755 "$FB_DIR/usr/sbin/oaf-feature-autoupdate.sh"
+            mkdir -p "$FB_DIR/etc/init.d" "$FB_DIR/etc/rc.d"
+            cp -f "$OAF_UPDATER" "$FB_DIR/etc/init.d/oaf-feature-autoupdate"
+            chmod 755 "$FB_DIR/etc/init.d/oaf-feature-autoupdate"
+            ln -sf ../init.d/oaf-feature-autoupdate "$FB_DIR/etc/rc.d/S99oaf-feature-autoupdate"
+            echo "[diy] 已装入 OAF 特征库首启更新: /etc/init.d/oaf-feature-autoupdate (START=99)"
         else
             echo "[diy] WARN: 未找到 $OAF_UPDATER" >&2
-        fi
-        RC_LOCAL="$FB_DIR/etc/rc.local"
-        mkdir -p "$(dirname "$RC_LOCAL")"
-        [ -f "$RC_LOCAL" ] || printf 'exit 0\n' > "$RC_LOCAL"
-        if ! grep -q "LeenWrt OAF" "$RC_LOCAL"; then
-            OAF_RC_BLK=$(cat <<'EOF'
-# >>> LeenWrt OAF START (首启成功后自动移除)
-# LeenWrt OAF：出厂配置覆盖（浅色/网关模式/启用过滤）
-[ -f /etc/config/fwx ] && {
-    OAF_CHANGED=""
-    [ "$(uci -q get fwx.global.theme_mode)" != "0" ] && { uci set fwx.global.theme_mode='0'; OAF_CHANGED=1; }
-    [ "$(uci -q get fwx.network.work_mode)" != "0" ] && { uci set fwx.network.work_mode='0'; OAF_CHANGED=1; }
-    [ "$(uci -q get fwx.appfilter.enable)" != "1" ] && { uci set fwx.appfilter.enable='1'; OAF_CHANGED=1; }
-    [ -n "$OAF_CHANGED" ] && { uci commit fwx; logger -t oaf "已应用 LeenWrt 设置(浅色/网关模式/启用过滤)"; }
-}
-# LeenWrt OAF：首启特征库自动更新（独立脚本，后台运行，成功后自清 rc.local）
-[ -x /usr/sbin/oaf-feature-autoupdate.sh ] && /usr/sbin/oaf-feature-autoupdate.sh >/tmp/oaf-feature-autoupdate.log 2>&1 &
-# <<< LeenWrt OAF END
-EOF
-)
-            # 置于首行：rc.local 末尾 firstboot-pkgs(apk 安装耗时较久)，先落地 OAF 设置
-            { printf '%s\n' "$OAF_RC_BLK"; grep -v '^exit 0$' "$RC_LOCAL" 2>/dev/null; echo 'exit 0'; } > "$RC_LOCAL.new" \
-                && mv "$RC_LOCAL.new" "$RC_LOCAL"
-            chmod 755 "$RC_LOCAL" 2>/dev/null || true
-            echo "[diy] 输出: $RC_LOCAL（已追加 OAF 设置 + 特征库首启自动更新脚本调用）"
         fi
     fi
 

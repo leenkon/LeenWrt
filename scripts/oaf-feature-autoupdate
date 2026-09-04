@@ -1,0 +1,69 @@
+#!/bin/sh /etc/rc.common
+# LeenWrt OAF 首启特征库更新：one-shot init.d（START=99，在 appfilter.init 之后），
+# 成功后 disable + 自删，零残留；失败保留以便下次启动重试。rc.local 不因此被改动。
+START=99
+STOP=10
+
+update() {
+    # 等网络就绪（最多 ~60s）
+    for i in $(seq 1 30); do
+        ping -c1 -W2 223.5.5.5 >/dev/null 2>&1 && break
+        sleep 2
+    done
+    ubus list fwx >/dev/null 2>&1 || return 1
+
+    # OAF 出厂配置覆盖（浅色/网关模式/启用过滤），仅首启需提交一次
+    if [ -f /etc/config/fwx ]; then
+        OAF_CHANGED=""
+        [ "$(uci -q get fwx.global.theme_mode)" != "0" ] && { uci set fwx.global.theme_mode='0'; OAF_CHANGED=1; }
+        [ "$(uci -q get fwx.network.work_mode)" != "0" ] && { uci set fwx.network.work_mode='0'; OAF_CHANGED=1; }
+        [ "$(uci -q get fwx.appfilter.enable)" != "1" ] && { uci set fwx.appfilter.enable='1'; OAF_CHANGED=1; }
+        [ -n "$OAF_CHANGED" ] && { uci commit fwx; logger -t oaf "已应用 LeenWrt 设置(浅色/网关模式/启用过滤)"; }
+    fi
+
+    # 取列表：仅服务器返回 code=2000 才继续；free=1 取 count 最大的包
+    list=$(ubus call fwx common '{"api":"get_feature_online_list","data":{"refresh":1,"lang":"cn"}}' 2>/dev/null)
+    [ "$(echo "$list" | jsonfilter -e '@.code' 2>/dev/null)" = "2000" ] || return 1
+    ids=$(echo "$list" | jsonfilter -e '@.data.files[@.free=1].id' 2>/dev/null)
+    cnts=$(echo "$list" | jsonfilter -e '@.data.files[@.free=1].count' 2>/dev/null)
+    [ -n "$ids" ] || return 1
+    tmp=$(mktemp -d)
+    printf '%s\n' "$ids" > "$tmp/ids"
+    printf '%s\n' "$cnts" > "$tmp/cnts"
+    best=$(paste -d' ' "$tmp/ids" "$tmp/cnts" 2>/dev/null | sort -k2 -n | tail -1 | awk '{print $1}')
+    rm -rf "$tmp"
+    [ -n "$best" ] || return 1
+
+    # 触发更新（oafd 异步下载，立即返回 code=2000=已接受）。
+    # 若返回非 2000，说明已在运行/刚完成：查状态避免重复触发，running 则继续轮询。
+    resp=$(ubus call fwx common "{\"api\":\"start_feature_online_update\",\"data\":{\"id\":\"$best\",\"lang\":\"cn\"}}" 2>/dev/null)
+    if [ "$(echo "$resp" | jsonfilter -e '@.code' 2>/dev/null)" != "2000" ]; then
+        st=$(ubus call fwx common '{"api":"get_feature_online_update_status"}' 2>/dev/null)
+        case "$(echo "$st" | jsonfilter -e '@.data.state' 2>/dev/null)" in
+            success) { /etc/init.d/oaf-feature-autoupdate disable 2>/dev/null; rm -f /etc/init.d/oaf-feature-autoupdate; return 0; } ;;
+            running) : ;;
+            *) return 1 ;;
+        esac
+    fi
+
+    # 轮询直到成功/失败（最多 ~10min）；成功才自清，失败保留下次启动重试
+    for i in $(seq 1 60); do
+        st=$(ubus call fwx common '{"api":"get_feature_online_update_status"}' 2>/dev/null)
+        case "$(echo "$st" | jsonfilter -e '@.data.state' 2>/dev/null)" in
+            success) break ;;
+            failed)  return 1 ;;
+        esac
+        sleep 10
+    done
+
+    # 成功：自清（disable 移除 rc.d 符号链接 + 删本脚本），零残留
+    /etc/init.d/oaf-feature-autoupdate disable 2>/dev/null
+    rm -f /etc/init.d/oaf-feature-autoupdate
+    return 0
+}
+
+start() {
+    # 后台运行不阻塞启动；整体重试 3 次应对 oafd 尚未就绪
+    ( for n in 1 2 3; do update && break; sleep 15; done ) &
+}
+stop() { :; }
