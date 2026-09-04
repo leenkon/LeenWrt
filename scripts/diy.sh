@@ -576,9 +576,11 @@ chmod 755 /etc/init.d/cpufreq-perf
 chmod 755 /etc/init.d/firstboot-pkgs
 /etc/init.d/firstboot-pkgs enable
 
-# 主题默认浅色（覆盖 fwx 出厂 theme_mode=1）
+# OAF 出厂配置：浅色/网关模式/启用过滤（uci-defaults 首启自清）
 if uci -q get fwx.global >/dev/null 2>&1; then
     uci set fwx.global.theme_mode='0'
+    uci set fwx.network.work_mode='0'
+    uci set fwx.appfilter.enable='1'
     uci commit fwx
 fi
 

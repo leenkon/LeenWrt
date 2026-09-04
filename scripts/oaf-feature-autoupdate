@@ -1,6 +1,5 @@
 #!/bin/sh /etc/rc.common
-# LeenWrt OAF 首启特征库更新：one-shot init.d（START=99，在 appfilter.init 之后），
-# 成功后 disable + 自删，零残留；失败保留以便下次启动重试。rc.local 不因此被改动。
+# LeenWrt OAF 首启特征库更新：one-shot init.d(START=99)；出厂配置由 uci-defaults 设置，本脚本仅拉取特征库，成功后 disable+自删零残留。
 START=99
 STOP=10
 
@@ -11,15 +10,6 @@ update() {
         sleep 2
     done
     ubus list fwx >/dev/null 2>&1 || return 1
-
-    # OAF 出厂配置覆盖（浅色/网关模式/启用过滤），仅首启需提交一次
-    if [ -f /etc/config/fwx ]; then
-        OAF_CHANGED=""
-        [ "$(uci -q get fwx.global.theme_mode)" != "0" ] && { uci set fwx.global.theme_mode='0'; OAF_CHANGED=1; }
-        [ "$(uci -q get fwx.network.work_mode)" != "0" ] && { uci set fwx.network.work_mode='0'; OAF_CHANGED=1; }
-        [ "$(uci -q get fwx.appfilter.enable)" != "1" ] && { uci set fwx.appfilter.enable='1'; OAF_CHANGED=1; }
-        [ -n "$OAF_CHANGED" ] && { uci commit fwx; logger -t oaf "已应用 LeenWrt 设置(浅色/网关模式/启用过滤)"; }
-    fi
 
     # 取列表：仅服务器返回 code=2000 才继续；free=1 取 count 最大的包
     list=$(ubus call fwx common '{"api":"get_feature_online_list","data":{"refresh":1,"lang":"cn"}}' 2>/dev/null)
