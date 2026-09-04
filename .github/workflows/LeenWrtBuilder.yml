@@ -47,7 +47,7 @@ jobs:
           set -e
           source $GITHUB_WORKSPACE/cores/leenwrt.conf
           chmod +x $GITHUB_WORKSPACE/scripts/sync-fwx.sh
-          # 钉死 SHA 拉取四组件(构建产物, 已被 .gitignore 忽略); 不追分支头、不改写钉点/950/README
+          # 钉死 SHA 拉取四组件(构建产物, 已被 .gitignore 忽略); 不追分支头、不改写钉点/950
           # 使 DPI bounds 补丁在 diy.sh before 能干净应用, 避免开启过滤触发内核 panic
           $GITHUB_WORKSPACE/scripts/sync-fwx.sh "$FWX_COMMIT"
           echo "[ci] fwx 核心已按钉点 $FWX_COMMIT 拉取(不追分支头)"
@@ -272,7 +272,7 @@ jobs:
           git -C $GITHUB_WORKSPACE config user.name "github-actions[bot]"
           git -C $GITHUB_WORKSPACE config user.email "github-actions[bot]@users.noreply.github.com"
           # 仅记录钉点相关文件（feeds/fwx/fwx 被 .gitignore 忽略，不入仓）
-          git -C $GITHUB_WORKSPACE add cores/leenwrt.conf feeds/fwx/README.md patches/fwx/
+          git -C $GITHUB_WORKSPACE add cores/leenwrt.conf patches/fwx/
           if ! git -C $GITHUB_WORKSPACE diff --cached --quiet; then
             SHA=$(grep -m1 '^FWX_COMMIT=' $GITHUB_WORKSPACE/cores/leenwrt.conf | cut -d= -f2 | tr -d '"')
             git -C $GITHUB_WORKSPACE commit -m "chore(fwx): pre-release sync FWX_COMMIT $SHA [skip ci]"
