@@ -3,6 +3,11 @@
 START=99
 STOP=10
 
+self_clear() {
+    /etc/init.d/oaf-feature-autoupdate disable 2>/dev/null
+    rm -f /etc/init.d/oaf-feature-autoupdate
+}
+
 update() {
     # 等网络就绪（最多 ~60s）
     for i in $(seq 1 30); do
@@ -24,13 +29,12 @@ update() {
     rm -rf "$tmp"
     [ -n "$best" ] || return 1
 
-    # 触发更新（oafd 异步下载，立即返回 code=2000=已接受）。
-    # 若返回非 2000，说明已在运行/刚完成：查状态避免重复触发，running 则继续轮询。
+    # 触发更新：oafd 异步下载并立即返回 code=2000=已接受；非 2000 时查状态避免重复触发
     resp=$(ubus call fwx common "{\"api\":\"start_feature_online_update\",\"data\":{\"id\":\"$best\",\"lang\":\"cn\"}}" 2>/dev/null)
     if [ "$(echo "$resp" | jsonfilter -e '@.code' 2>/dev/null)" != "2000" ]; then
         st=$(ubus call fwx common '{"api":"get_feature_online_update_status"}' 2>/dev/null)
         case "$(echo "$st" | jsonfilter -e '@.data.state' 2>/dev/null)" in
-            success) { /etc/init.d/oaf-feature-autoupdate disable 2>/dev/null; rm -f /etc/init.d/oaf-feature-autoupdate; return 0; } ;;
+            success) self_clear; return 0 ;;
             running) : ;;
             *) return 1 ;;
         esac
@@ -38,17 +42,14 @@ update() {
 
     # 轮询直到成功/失败（最多 ~10min）；成功才自清，失败保留下次启动重试
     for i in $(seq 1 60); do
-        st=$(ubus call fwx common '{"api":"get_feature_online_update_status"}' 2>/dev/null)
-        case "$(echo "$st" | jsonfilter -e '@.data.state' 2>/dev/null)" in
+        case "$(ubus call fwx common '{"api":"get_feature_online_update_status"}' 2>/dev/null | jsonfilter -e '@.data.state' 2>/dev/null)" in
             success) break ;;
             failed)  return 1 ;;
         esac
         sleep 10
     done
 
-    # 成功：自清（disable 移除 rc.d 符号链接 + 删本脚本），零残留
-    /etc/init.d/oaf-feature-autoupdate disable 2>/dev/null
-    rm -f /etc/init.d/oaf-feature-autoupdate
+    self_clear
     return 0
 }
 

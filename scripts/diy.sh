@@ -589,8 +589,7 @@ EOT
     chmod 755 "$OUT"
     echo "[diy] 输出: $OUT"
 
-    # OAF 首启特征库更新：独立 one-shot init.d（START=99，在 appfilter.init 之后）；成功后自清(disable+删本脚本)，
-    # 不改动 rc.local，零残留。OAF 与 fwx 互斥，故仅 WITH_OAF 时装入镜像。
+    # OAF 首启特征库更新：one-shot init.d(START=99)，成功后自清零残留；仅 WITH_OAF 装入镜像
     if [ "$WITH_OAF" = "1" ]; then
         OAF_UPDATER="$SCRIPT_DIR/oaf-feature-autoupdate"
         if [ -f "$OAF_UPDATER" ]; then
