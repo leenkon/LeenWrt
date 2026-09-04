@@ -1,0 +1,7 @@
+# AdGuardHome 全屋去广告（勾选时由 LeenWrtBuilder.yml (workflow) 注入 .config；引擎走官方预编译二进制注入；luci-compat 供旧模板）
+luci-app-adguardhome
+luci-i18n-adguardhome-zh-cn
+wget
+ipset
+kmod-ipset
+luci-compat

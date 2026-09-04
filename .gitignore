@@ -1,0 +1,32 @@
+# 动态生成文件（diy.sh after 阶段生成，不提交）
+files/etc/uci-defaults/
+files/etc/shadow
+
+# 动态下载文件（构建时下载，不提交）
+files/etc/openclash/core/
+files/usr/bin/AdGuardHome
+
+# 离线 .apk 包：需随固件打包（首启经 firstboot-pkgs 用 --allow-untrusted 安装），
+# 故纳入版本库、不忽略；kmod 类须与自编译内核 vermagic 一致。
+
+# 构建输出
+bin/
+build_dir/
+staging_dir/
+tmp/
+log/
+workflow_*.json
+
+# 编辑器
+.workbuddy/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# fwx 四个代码组件（fwx/fwxd/libfwx_common/luci-theme-fanchmwrt）：构建期按 FWX_COMMIT 钉死 SHA
+# 从 fanchmwrt/package/fcm 动态拉取，不入库；各目录内 .*_commit 为本地缓存标记（父目录忽略即覆盖）。
+feeds/fwx/fwx/
+feeds/fwx/fwxd/
+feeds/fwx/libfwx_common/
+feeds/fwx/luci-theme-fanchmwrt/

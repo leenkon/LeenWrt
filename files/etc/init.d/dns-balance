@@ -1,0 +1,68 @@
+#!/bin/sh /etc/rc.common
+# 独立常驻 DNS 自愈合：与 ADGH/OC 生命周期解耦，每 5s 探 ADGH(:5353) 与 OC(:7874) 真实监听态，
+# 仅状态变化时分别重建劫持表(/usr/sbin/dns-hijack) 与重排 dnsmasq 上游(set_upstream)。
+# 覆盖 ADGH 装/卸/崩 与 OC 装/卸/启停 的全部组合；set_upstream 幂等，是 dnsmasq 上游唯一管理者
+# （diy.sh / firstboot-pkgs 不再写上游，仅 ADGH/OC 配置与劫持开关，避免双处写上游漂移）。
+USE_PROCD=1
+START=20
+STOP=80
+
+oc_listening() {
+	[ -x /etc/init.d/openclash ] && grep -qi ':1ec2 ' /proc/net/tcp /proc/net/tcp6 2>/dev/null
+}
+
+# 按 OC(:7874) 实际监听态与网络拓扑设置 dnsmasq 上游；幂等，仅变化时重写并 restart。
+set_upstream() {
+	cur=$(uci -q get dhcp.@dnsmasq[0].server)
+	_oc=""; oc_listening && _oc='127.0.0.1#7874'
+	_desired=""
+	for s in $cur; do
+		[ "$s" = "127.0.0.1#7874" ] && continue
+		_desired="$_desired $s"
+	done
+	if [ -z "$_desired" ]; then
+		if uci -q get network.wan >/dev/null 2>&1; then
+			_desired='223.5.5.5 223.6.6.6'
+		else
+			_desired=$(uci -q get network.lan.gateway)
+		fi
+	fi
+	_desired=$(echo "$_oc $_desired" | tr -s ' ' | sed 's/^ //; s/ $//')
+	[ "$cur" = "$_desired" ] && return 0
+	uci -q delete dhcp.@dnsmasq[0].port
+	uci set dhcp.@dnsmasq[0].noresolv='1'
+	uci set dhcp.@dnsmasq[0].dns_redirect='0'
+	uci -q delete dhcp.@dnsmasq[0].server
+	for s in $_desired; do
+		[ -n "$s" ] && uci add_list dhcp.@dnsmasq[0].server="$s"
+	done
+	# 有 wan：绕 ISP 污染，peerdns 关、wan.dns 与 resolv.conf 回指 dnsmasq
+	if uci -q get network.wan >/dev/null 2>&1; then
+		uci set network.wan.peerdns='0'
+		uci set network.wan.dns='127.0.0.1'
+		printf 'nameserver 127.0.0.1\n' > /etc/resolv.conf 2>/dev/null || true
+	fi
+	uci commit dhcp
+	/etc/init.d/dnsmasq restart 2>/dev/null
+}
+
+dns_balance_loop() {
+	while true; do
+		/usr/sbin/dns-hijack
+		set_upstream
+		sleep 5
+	done
+}
+
+start_service() {
+	procd_open_instance dns-balance
+	procd_set_param command /bin/sh -c '. /etc/init.d/dns-balance; dns_balance_loop'
+	procd_set_param respawn
+	procd_close_instance
+}
+
+# 停止：dns-hijack 按 ADGH 监听态保留或自清劫持；dnsmasq 上游由 set_upstream 归位
+stop_service() {
+	/usr/sbin/dns-hijack 2>/dev/null
+	set_upstream 2>/dev/null
+}

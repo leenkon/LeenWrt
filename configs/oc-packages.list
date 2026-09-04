@@ -1,0 +1,10 @@
+# OpenClash 代理服务（勾选时由 LeenWrtBuilder.yml (workflow) 注入 .config；luci-compat 供旧模板）
+luci-app-openclash
+clash-meta
+kmod-tun
+libcap
+libcap-bin
+ruby
+ruby-yaml
+unzip
+luci-compat

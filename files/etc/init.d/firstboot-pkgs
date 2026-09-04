@@ -1,0 +1,46 @@
+#!/bin/sh /etc/rc.common
+# LeenWrt 首启离线安装 apps/ 下的 .apk（--allow-untrusted；内核 vermagic 须匹配）；成功后才自清理
+START=99
+STOP=10
+
+install_offline() {
+    [ -d /etc/firstboot-pkgs/apps ] || return 0
+    local ok=1
+    for f in /etc/firstboot-pkgs/apps/*.apk; do
+        [ -f "$f" ] || continue
+        # 本地 .apk 离线装：--no-network 不走网络(无需等网就绪)，失败重试 5 次
+        local i rc=1 log=/tmp/.firstboot-pkgs.log
+        for i in 1 2 3 4 5; do
+            apk --allow-untrusted --no-network add "$f" >"$log" 2>&1
+            rc=$?
+            [ $rc -eq 0 ] && break
+            # 保留 apk 真实报错，否则失败时只有 rc 无从诊断
+            logger -t firstboot-pkgs "安装 $f 第 $i 次失败(rc=$rc): $(tail -2 "$log" 2>/dev/null)"
+            sleep 5
+        done
+        rm -f "$log"
+        if [ $rc -eq 0 ]; then
+            rm -f "$f"
+            logger -t firstboot-pkgs "离线安装完成: $f"
+        else
+            logger -t firstboot-pkgs "离线安装失败(保留待查): $f"
+            ok=0
+        fi
+    done
+    # 仅全部成功才自清理，失败保留以便重试
+    if [ $ok -eq 1 ]; then
+        /etc/init.d/firstboot-pkgs disable 2>/dev/null
+        rm -f /etc/init.d/firstboot-pkgs
+        rm -rf /etc/firstboot-pkgs
+        logger -t firstboot-pkgs "全部离线包安装完成，已自清理"
+    else
+        logger -t firstboot-pkgs "存在失败项，保留资料以便重试"
+    fi
+}
+
+start() {
+    # mkdir 原子锁防 uci-defaults 与 rc.d 并发
+    LOCK=/tmp/.firstboot-pkgs.lock
+    ( if mkdir "$LOCK" 2>/dev/null; then install_offline; rmdir "$LOCK" 2>/dev/null; fi ) &
+}
+stop() { :; }

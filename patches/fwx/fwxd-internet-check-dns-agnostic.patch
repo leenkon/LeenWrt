@@ -1,0 +1,35 @@
+--- a/src/check_main.c
++++ b/src/check_main.c
+@@ -181,19 +181,19 @@
+ }
+ 
+ static int __check_internet_connectivity(void) {
+-    int ping_success = 0;
+-    int tcp_success = 0;
+-    
+-    if (check_ping("www.baidu.com") == 0) {
+-        ping_success = 1;
+-		return 1;
+-    }
+-    
+-    if (check_tcp_connect("www.baidu.com", 443, 2) == 0) {
+-        tcp_success = 1;
+-		return 1;
+-    }
+-	return 0;
++    // 优先 TCP 连接公共 DoH IP（无需 DNS 解析），避免 ADGH/DNS 劫持未就绪时误报离线
++    if (check_tcp_connect("223.5.5.5", 443, 2) == 0)
++        return 1;
++    if (check_tcp_connect("180.76.76.76", 443, 2) == 0)
++        return 1;
++
++    // fallback：传统 hostname 检查
++    if (check_ping("www.baidu.com") == 0)
++        return 1;
++    if (check_tcp_connect("www.baidu.com", 443, 2) == 0)
++        return 1;
++
++    return 0;
+ }
+ 
+ 

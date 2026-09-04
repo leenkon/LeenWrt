@@ -1,0 +1,2 @@
+[ -x /etc/init.d/firstboot-pkgs ] && /etc/init.d/firstboot-pkgs start
+exit 0

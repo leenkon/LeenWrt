@@ -1,0 +1,51 @@
+#!/bin/sh
+# LAN :53 → :5353(ADGH)；ADGH 未就绪则清表回退 dnsmasq :53（零抖动）。
+# priority -150 早于 firewall4 dstnat(-100)；仅 br-lan 入向，避免 ADGH 自身上游 127.0.0.1:53 被重定向成环。
+# dns_hijack_bypass_ip 空=全量劫持；按地址族排除旁路；ADGH 须 bind 0.0.0.0 + :: 5353。
+if ! command -v nft >/dev/null 2>&1; then
+    logger -t dns-hijack "ERROR: nft not found"
+    exit 0
+fi
+
+port_listen() {
+    if command -v ss >/dev/null 2>&1; then
+        ss -lun 2>/dev/null | grep -q ':5353 '
+    elif command -v netstat >/dev/null 2>&1; then
+        netstat -lun 2>/dev/null | grep -q ':5353 '
+    else
+        return 1
+    fi
+}
+
+# 防抖：已监听且规则就位则跳过，避免周期性拆表致 DNS 瞬时回落
+if port_listen && nft list table inet dns_hijack 2>/dev/null | grep -q 'dport 53 redirect to :5353'; then
+    exit 0
+fi
+
+nft delete table inet dns_hijack 2>/dev/null
+
+# 未装/未监听 ADGH 直接退出，dnsmasq :53 兜底
+if [ ! -x /usr/bin/AdGuardHome ]; then
+    logger -t dns-hijack "AdGuardHome 未安装，跳过劫持（回退 dnsmasq :53）"
+    exit 0
+fi
+if ! port_listen; then
+    logger -t dns-hijack "AdGuardHome 未在监听 :5353，清劫持回退 dnsmasq :53（零抖动）"
+    exit 0
+fi
+
+nft add table inet dns_hijack
+nft add chain inet dns_hijack prerouting '{ type nat hook prerouting priority -150; }'
+
+BYPASS_IP=$(uci -q get adguardhome.config.dns_hijack_bypass_ip 2>/dev/null)
+# 按地址族排除旁路，避免错配致 nft 编译失败
+RULE4=""; RULE6=""
+[ -n "$BYPASS_IP" ] && case "$BYPASS_IP" in
+    *:*) RULE6="ip6 saddr != $BYPASS_IP" ;;
+    *)   RULE4="ip saddr != $BYPASS_IP" ;;
+esac
+
+nft add rule inet dns_hijack prerouting iifname "br-lan" ${RULE4:-} udp dport 53 redirect to :5353
+nft add rule inet dns_hijack prerouting iifname "br-lan" ${RULE4:-} tcp dport 53 redirect to :5353
+nft add rule inet dns_hijack prerouting iifname "br-lan" meta nfproto ipv6 ${RULE6:-} udp dport 53 redirect to :5353
+nft add rule inet dns_hijack prerouting iifname "br-lan" meta nfproto ipv6 ${RULE6:-} tcp dport 53 redirect to :5353

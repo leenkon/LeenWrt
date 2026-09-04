@@ -1,0 +1,76 @@
+schema_version: 34
+http:
+  address: "0.0.0.0:8030"
+  session_ttl: 720h
+  pprof:
+    enabled: false
+    port: 6060
+dns:
+  port: 5353
+  bind_hosts:
+    - 0.0.0.0
+    - "::"
+  # 上游主走 dnsmasq(:53)：OC 装了由 init.d 前置 OC(:7874) 做域名分流；备走 IP 形式 DoH 兜底。
+  # DoH 必须是 IP 形式：域名形式需先经 bootstrap_dns 走 UDP:53 解析主机名，UDP:53 不通时与 dnsmasq 同时失效。
+  upstream_dns:
+    - "127.0.0.1:53"                  # 主：dnsmasq（OC 装了则其上游自动前置 :7874）
+    - "https://223.5.5.5/dns-query"   # 备：IP 形式 DoH，dnsmasq/OC 不可用时兜底
+  bootstrap_dns:              # 仅解析"域名形式 upstream"自身；当前为 IP 形式，不参与
+    - "223.5.5.5"
+    - "223.6.6.6"
+  fallback_dns: []            # 主/备已覆盖；parallel_requests=false 保证按序先试主
+  parallel_requests: false
+  upstream_timeout: 3s
+  cache_enabled: true
+  cache_size: 500000
+  cache_optimistic_ttl: 30s
+  cache_optimistic_max_age: 12h
+  enable_dnssec: false
+filtering:
+  protection_enabled: true
+  filtering_enabled: true
+  blocking_mode: default
+  blocked_response_ttl: 3600
+  blocked_services:
+    ids: []
+  parental_enabled: false
+  safebrowsing_enabled: false
+  safebrowsing_cache_size: 1048576
+  safesearch_cache_size: 1048576
+  parental_cache_size: 1048576
+  cache_time: 30
+  filters_update_interval: 24
+filters:
+  - enabled: true
+    url: "https://adguardteam.github.io/HostlistsRegistry/assets/filter_21.txt"
+    name: "Anti-AD-CHN"
+    id: 1
+  - enabled: true
+    url: "https://easylist-downloads.adblockplus.org/easylistchina+easylist.txt"
+    name: "EasyList China"
+    id: 2
+  - enabled: true
+    url: "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"
+    name: "AdGuard DNS filter"
+    id: 3
+  - enabled: true
+    url: "https://anti-ad.net/easylist.txt"
+    name: "Anti-AD"
+    id: 4
+whitelist_filters: []
+user_rules: []
+querylog:
+  enabled: true
+  # 关掉落盘查询日志：data_dir 在 overlay 闪存，长期写入会撑爆分区（间歇断流）
+  file_enabled: false
+  interval: 2160h
+  size_memory: 1000
+statistics:
+  enabled: true
+  interval: 24h
+  results: 1000
+dhcp:
+  enabled: false
+users:
+  - name: admin
+    password: "$2b$10$ZEL7fGN0sordgM10nFnFfOh4lfdPXLLJhYeuNfymetjErfPNM9yxe"
