@@ -17,7 +17,7 @@ is_valid_ipv4() {
     return 0
 }
 
-# fwx 源码树补丁：DPI 边界守卫 + fwxd 联网检查；上下文不符即 fail-fast（静默跳过曾致 fwx 过滤 panic）
+# fwx 源码补丁：上下文不符即 fail-fast（静默跳过曾致 fwx 过滤 panic）
 _apply_fwx_src_patch() {
     local name="$1" patch="$2" target="${3:-$PROJECT_ROOT/feeds/fwx/fwx}"
     [ -f "$patch" ] || error_exit "未找到 $name 补丁: $patch"
@@ -67,15 +67,14 @@ done
 [ "$PHASE" = "after" ] && [ -z "$PROFILE_TYPE" ] && error_exit "after阶段必须指定 --type full/bypass"
 case "$PROFILE_TYPE" in ""|bypass|full) ;; *) error_exit "--type 仅支持 bypass / full" ;; esac
 
-# OAF 与 fwx 互斥：同为 conntrack 级 DPI，共用 /etc/config/fwx、/usr/bin/rule_manager、/etc/fwxd/feature.*，
-# 并存会互相覆盖文件与抢钩子。OAF 优先（与 workflow 的判定一致，此处兜底防止手工调用漏掉互斥）
+# OAF 与 fwx 互斥(共用 /etc/config/fwx、rule_manager、feature.*)，OAF 优先，强制关 fwx
 if [ "$WITH_OAF" = "1" ] && [ "$WITH_FWX" = "1" ]; then
     echo "[diy] OAF 已勾选 → 强制关闭 fwx" >&2
     WITH_FWX=0
 fi
 
 if [ "$PROFILE_TYPE" = "bypass" ]; then
-    # 旁路由：--ip=本机LAN IP(默认10.10.10.2)，--gateway=上游主路由(默认10.10.10.1)
+    # 旁路由：--ip=本机LAN IP(默认.2)，--gateway=上游主路由(默认.1)
     [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_BYPASS_IP"
     [ -z "$CUSTOM_GATEWAY" ] && CUSTOM_GATEWAY="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法旁路由IP: $CUSTOM_IP"
@@ -84,7 +83,7 @@ if [ "$PROFILE_TYPE" = "bypass" ]; then
 elif [ "$PROFILE_TYPE" = "full" ]; then
     [ -z "$CUSTOM_IP" ] && CUSTOM_IP="$DEF_MAIN_IP"
     is_valid_ipv4 "$CUSTOM_IP" || error_exit "非法路由IP: $CUSTOM_IP"
-    # 主路由：--gateway 可选，双路由填旁路由 IP，单路由留空
+    # 主路由：--gateway 可选(双路由填旁路由 IP，单路由留空)
     [ -n "$CUSTOM_GATEWAY" ] && { is_valid_ipv4 "$CUSTOM_GATEWAY" || error_exit "非法旁路由IP: $CUSTOM_GATEWAY"; }
 fi
 
@@ -107,32 +106,29 @@ before)
     [ -f "$FEED_CONF_SRC" ] || error_exit "缺失feed配置: $FEED_CONF_SRC"
     rm -f feeds.conf
     cp "$FEED_CONF_SRC" feeds.conf
-    # src-link 相对路径在 openwrt TOPDIR 解析失败，改写为绝对路径以定位 feeds/fwx
+    # src-link 相对路径在 TOPDIR 解析失败，改写为绝对路径定位 feeds/fwx
     sed -i "s#\./feeds/fwx#$PROJECT_ROOT/feeds/fwx#g" feeds.conf
 
-    # 未勾选 fwx（含 OAF 优先互斥）时移除 fwx/fwxluci feed 注册，构建面彻底不含 fwx 包
+    # 未勾选 fwx 时移除 fwx/fwxluci feed 注册，构建面不含 fwx 包
     if [ "$WITH_FWX" != "1" ]; then
         sed -i '/^[[:space:]]*src-link[[:space:]]\+fwx/d' feeds.conf
         sed -i '/^[[:space:]]*src-git[[:space:]]\+fwxluci/d' feeds.conf
         echo "[diy] fwx/fwxluci feed 已移除（未勾选 fwx）"
     fi
 
-    # fwx 内核改动(kmod-fwx 硬依赖)整体受 --with-fwx 门控：不勾选时零 fwx 内核补丁，连 950 都不注入。
+    # fwx 内核改动受 --with-fwx 门控：不勾选时零 fwx 内核补丁。
     if [ "$WITH_FWX" = "1" ]; then
         FWX_KERN_PATCH="$PROJECT_ROOT/patches/fwx/950-fwx-nf-conn-struct-user-hook.patch"
         if [ -f "$FWX_KERN_PATCH" ]; then
-            # 950 针对 6.12 系列(系列内任意子版本均可尝试)；版本取自 target/linux/generic/kernel-6.12 的 LINUX_KERNEL_HASH-6.12.xx
+            # 950 针对 6.12 系列；版本取自 target/linux/generic/kernel-6.12
             FWX_KERN_VER=$(grep -m1 '^LINUX_KERNEL_HASH-6\.12\.' target/linux/generic/kernel-6.12 2>/dev/null | grep -oE '6\.12\.[0-9]+' 2>/dev/null || true)
             echo "[diy] immortalwrt 内核版本: ${FWX_KERN_VER:-未知} (950 针对 6.12 系列，系列内任意子版本均可尝试打入)"
             FWX_KERNEL_BASELINE=$(grep -m1 '^FWX_KERNEL_BASELINE=' "$PROJECT_ROOT/cores/leenwrt.conf" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)
             if [ -n "$FWX_KERNEL_BASELINE" ] && [ -n "$FWX_KERN_VER" ]; then
-                FWX_BASE_OK=0
                 case "$FWX_KERN_VER" in
-                    "${FWX_KERNEL_BASELINE}"*) FWX_BASE_OK=1 ;;
+                    "${FWX_KERNEL_BASELINE}"*) ;;
+                    *) error_exit "950 补丁针对 ${FWX_KERNEL_BASELINE} 系列内核，当前 ${FWX_KERN_VER} 不匹配。请重新生成 950 或钉死 immortalwrt 内核 tag。" ;;
                 esac
-                if [ "$FWX_BASE_OK" -ne 1 ]; then
-                    error_exit "950 补丁针对 ${FWX_KERNEL_BASELINE} 系列内核，当前 ${FWX_KERN_VER} 不匹配。请重新生成 950 或钉死 immortalwrt 内核 tag。"
-                fi
             fi
             KERN_TREE=$(ls -d build_dir/linux-x86_64/linux-6.12* 2>/dev/null | head -1)
             if [ -n "$KERN_TREE" ]; then
@@ -150,11 +146,11 @@ before)
             echo "[diy] WARN: 未找到 fwx 内核补丁 $FWX_KERN_PATCH (kmod-fwx 可能因缺 fwx_data 编译失败)" >&2
         fi
 
-        # 6.12 主线 nf_send_reset 原生 4 参 (net,sk,oldskb,hook)（5.11+ 起），fwx 源码 >5.10.197 分支已正确调用 4 参；改 3 参(旧补丁方向)会令 RST 发送时 sk 取错寄存器 → 内核 panic，故 fwx 源码保持 4 参调用、不应用任何 3 参改写补丁
+        # nf_send_reset 6.12 原生 4 参(net,sk,oldskb,hook)（5.11+），fwx >5.10.197 分支已正确调 4 参；改 3 参(旧补丁)令 RST 时 sk 取错寄存器 → panic，故保持 4 参、不应用 3 参改写补丁
         _apply_fwx_src_patch "fwx DPI bounds" "$PROJECT_ROOT/patches/fwx/fwx-match-feature-crash.patch"
         _apply_fwx_src_patch "fwxd internet check" "$PROJECT_ROOT/patches/fwx/fwxd-internet-check-dns-agnostic.patch" "$PROJECT_ROOT/feeds/fwx/fwxd"
 
-        # 自检闸门：DPI 钳制须真实落入 fwx_main.c（fwx 6.12 的 nf_send_reset 已是 4 参 (net,sk,oldskb,hook)，勿改 3 参）。fwx Makefile 无 PKG_RELEASE，须 touch 强制重编，否则复用旧 build_dir .o 静默产出未打补丁 fwx.ko
+        # 自检闸门：DPI 钳制(skb_tail_pointer)须真实落入 fwx_main.c。fwx Makefile 无 PKG_RELEASE，须 touch 强制重编，否则复用旧 .o 静默产出未打补丁 fwx.ko
         FWX_MAIN_C="$PROJECT_ROOT/feeds/fwx/fwx/src/fwx_main.c"
         [ -f "$FWX_MAIN_C" ] || error_exit "fwx 源码缺失: $FWX_MAIN_C（sync-fwx 未拉取？）"
         if ! grep -q "skb_tail_pointer" "$FWX_MAIN_C"; then
@@ -168,13 +164,13 @@ before)
     ;;
 
 ruby)
-    # ruby YJIT 解耦：分支头 lang/ruby 默认拉起 rust/host（rustc LLVM 404 致构建挂）；OpenClash 依赖 ruby 不可选，仅 WITH_OC 时调用
+    # ruby YJIT 解耦：默认拉起 rust/host（rustc LLVM 404 致构建挂）；OpenClash 依赖 ruby 不可选，仅 WITH_OC 时调用
     echo "[diy] ruby: 解耦 YJIT 与 rust/host（x86_64/aarch64）"
     RUBY_DIR="$PROJECT_ROOT/openwrt/feeds/packages/lang/ruby"
     if [ -d "$RUBY_DIR" ]; then
-        # Makefile: 去掉 RUBY_ENABLE_YJIT:rust/host 条件依赖，仅保留 ruby/host（用 # 作分隔符避路径斜杠）
+        # 去掉 RUBY_ENABLE_YJIT:rust/host 依赖，仅留 ruby/host（# 作分隔符避斜杠）
         sed -i -E 's#(PKG_BUILD_DEPENDS:=ruby/host) RUBY_ENABLE_YJIT:rust/host#\1#' "$RUBY_DIR/Makefile"
-        # Makefile: 删除 x86_64/aarch64 默认开启 YJIT（让 defconfig 不再翻成 =y）
+        # 删 x86_64/aarch64 默认开 YJIT（defconfig 不再翻 =y）
         sed -i -E '/^[[:space:]]*default y if x86_64\|\|aarch64[[:space:]]*$/d' "$RUBY_DIR/Makefile"
         echo "[diy] ruby: 已解耦 YJIT（Makefile 依赖 + default 均清除）"
     else
@@ -183,10 +179,8 @@ ruby)
     ;;
 
 themes)
-    # 须在 feeds update -a 后运行（argon/bootstrap 在 src-git feeds/luci，update 后落地）
-    # 所有主题统一处理：
-    #  1) 标题：.ut 即 ucode，用 {{ }}（旧 Lua <%= %> 属损坏，重构建自愈）。
-    #  2) footer：隐藏不删除，保 #modemenu DOM 防 menu-argon.js 抛错致侧边栏不渲染。
+    # 须在 feeds update -a 后运行。所有主题统一处理：
+    #  标题用 ucode {{ }}（.ut）；footer 仅隐藏不删 DOM，保 #modemenu 防侧边栏不渲染。
     echo "[diy] themes: 处理 fanchmwrt/argon/bootstrap 主题标题与 footer"
     OPENWRT_DIR="$PROJECT_ROOT/openwrt"
     _FWX_THEME="$PROJECT_ROOT/feeds/fwx/luci-theme-fanchmwrt"
@@ -195,24 +189,21 @@ themes)
 import sys, os, re, glob
 fwm_root, luci_dir = sys.argv[1], sys.argv[2]
 
-# .ut 即 ucode 模板；Lua <%= %> 分支仅遗留兼容。
-# boardinfo.hostname / node.title / striptags 为模板上下文变量。
+# .ut 是 ucode 模板 → 用 {{ }}；Lua <%= %> 仅遗留兼容分支。
 TITLE_UCODE = "<title>{{ striptags((boardinfo.hostname or '?') .. (node and ' - ' .. node.title or '')) }} - LuCI</title>"
 TITLE_LUA  = "<title><%= striptags((boardinfo.hostname or '?') .. (node and ' - ' .. node.title or '')) %> - LuCI</title>"
-# 隐藏 footer 但保留 DOM，整串用于重复构建去重。
+# 隐藏 footer 但保留 DOM（整串用于重复构建去重）
 HIDE_CSS = '<style id="leenwrt-hide-footer">footer{display:none!important}</style>'
 
 def fix_header(path):
     s0 = open(path, encoding='utf-8').read()
     s = s0
-    # .ut 即 ucode（LuCI 约定）；旧 Lua <%= %> 按损坏自愈重注入。
+    # .ut 即 ucode，旧 Lua <%= %> 按损坏自愈重注入
     is_ucode = path.endswith('.ut')
     TITLE_NEW = TITLE_UCODE if is_ucode else TITLE_LUA
-    # 替换 <title>，容忍 <title ...> 属性
     s, n = re.subn(r'<title[^>]*>.*?</title>', TITLE_NEW, s, count=1, flags=re.S)
     if n and HIDE_CSS not in s:
-        # 紧跟 </title> 注入，不依赖 </head> 是否存在
-        s = s.replace(TITLE_NEW, TITLE_NEW + "\n    " + HIDE_CSS, 1)
+        s = s.replace(TITLE_NEW, TITLE_NEW + "\n    " + HIDE_CSS, 1)  # 紧跟 </title> 注入，不依赖 </head>
     if s != s0:
         open(path, 'w', encoding='utf-8').write(s)
         print("[diy] 标题+footer隐藏已应用: " + path)
@@ -236,7 +227,7 @@ PY
     ;;
 
 config)
-    # .config 主题注入：seed 仅含基础主题(argon/bootstrap)；按 WITH_FWX 追加 fanchmwrt(开)与默认主题(开=fanchmwrt/关=argon)
+    # .config 主题注入：seed 仅含基础主题；按 WITH_FWX 追加 fanchmwrt(开)与默认主题(开=fanchmwrt/关=argon)
     echo "[diy] config: 注入默认主题(CONFIG_LUCI_DEFAULT_THEME，按 WITH_FWX)"
     CONFIG_FILE=".config"
     [ -f "$CONFIG_FILE" ] || error_exit "缺失 $CONFIG_FILE（config 阶段须在 .config 复制后调用）"
@@ -307,8 +298,7 @@ chmod 755 /etc/init.d/dns-balance
 EOF
 )
 
-    # 主路由双路由：--gateway=旁路由IP，写入 adguardhome config 供 dns-hijack 排除(防二次劫持)；单路由留空=全量劫持。
-    # 旁路由自身不写该项(保持空)：dns-hijack 空值即全量劫持，自动适应旁路由 LAN IP 后期变更，无需固化。
+    # 主路由双路由：--gateway=旁路由IP 写入 dns_hijack_bypass_ip 防二次劫持；单路由/旁路由留空=全量劫持。
     BYPASS_IP=""
     [ "$PROFILE_TYPE" = "full" ] && BYPASS_IP="$CUSTOM_GATEWAY"
     BYPASS_IP_UCI_BLK=""
@@ -450,22 +440,6 @@ $BYPASS_IP_UCI_BLK
 uci commit adguardhome
 "
         fi
-        # dns-balance 启用：ADGH 或 OC 任一存在即启用一次
-        if [ "$WITH_OC" = "1" ] || [ "$NO_ADGH" != "1" ]; then
-            BYPASS_OC_ADGH_BLK="${BYPASS_OC_ADGH_BLK}${DNS_BALANCE_ENABLE_BLK}
-"
-        fi
-        # 无 ADGH 且无 OC：dns-balance 不接管，静态兜底公网 DNS（防 dnsmasq 无上游）
-        if [ "$WITH_OC" != "1" ] && [ "$NO_ADGH" = "1" ]; then
-            BYPASS_OC_ADGH_BLK="${BYPASS_OC_ADGH_BLK}uci -q delete dhcp.@dnsmasq[0].port
-uci set dhcp.@dnsmasq[0].noresolv='1'
-uci set dhcp.@dnsmasq[0].dns_redirect='0'
-uci -q delete dhcp.@dnsmasq[0].server
-uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
-uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
-uci commit dhcp
-"
-        fi
         cat >> "$OUT" <<EOT
 $IP_FORWARD_LN
 uci set network.lan.proto='static'
@@ -543,7 +517,7 @@ EOT
             cat >> "$OUT" <<EOT
 $ADGH_ENABLE_BLK
 EOT
-            # dns_hijack 写 uci；劫持表由 dns-balance 常驻按 ADGH 监听态布/清，=0 时改用 REJECT 强制走路由器 DNS
+            # dns_hijack 写 uci；=0 时改 REJECT 强制走路由器 DNS（劫持表由 dns-balance 按监听态布/清）
             cat >> "$OUT" <<EOT
 uci -q delete adguardhome.config.dns_hijack
 uci set adguardhome.config.dns_hijack='$WITH_DNS_HIJACK'
@@ -554,15 +528,16 @@ EOT
                 printf '%s\n' "$DNS_HIJACK_REJECT_BLK" >> "$OUT"
             fi
         fi
-        # dns-balance 启用：ADGH 或 OC 任一存在即启用一次
-        if [ "$WITH_OC" = "1" ] || [ "$NO_ADGH" != "1" ]; then
-            cat >> "$OUT" <<EOT
+    fi
+
+    # dns-balance 启用 + 静态兜底：两 profile 共用（ADGH 或 OC 任一存在即启用；皆无则 dns-balance 不接管，静态公网 DNS 防 dnsmasq 无上游）
+    if [ "$WITH_OC" = "1" ] || [ "$NO_ADGH" != "1" ]; then
+        cat >> "$OUT" <<EOT
 $DNS_BALANCE_ENABLE_BLK
 EOT
-        fi
-        # 无 ADGH 且无 OC：dns-balance 不接管，静态兜底公网 DNS（防 dnsmasq 无上游）
-        if [ "$WITH_OC" != "1" ] && [ "$NO_ADGH" = "1" ]; then
-            cat >> "$OUT" <<EOT
+    fi
+    if [ "$WITH_OC" != "1" ] && [ "$NO_ADGH" = "1" ]; then
+        cat >> "$OUT" <<EOT
 uci -q delete dhcp.@dnsmasq[0].port
 uci set dhcp.@dnsmasq[0].noresolv='1'
 uci set dhcp.@dnsmasq[0].dns_redirect='0'
@@ -571,10 +546,9 @@ uci add_list dhcp.@dnsmasq[0].server='$DNS_MAIN'
 uci add_list dhcp.@dnsmasq[0].server='$DNS_BACKUP'
 uci commit dhcp
 EOT
-        fi
     fi
 
-    # fwx / OAF 应用过滤(DPI 内核模块)依赖 conntrack，与流卸载冲突会导致连接不稳/应用过滤失效，故开启任一后端时关闭流卸载
+    # fwx/OAF(DPI)依赖 conntrack，与流卸载冲突致连接不稳/过滤失效，开任一后端时关流卸载
     if [ "$WITH_FWX" = "1" ] || [ "$WITH_OAF" = "1" ]; then
         FLOFF=0; FLOFF_HW=0
     else
@@ -598,7 +572,7 @@ chmod 755 /etc/init.d/cpufreq-perf
 /etc/init.d/cpufreq-perf enable
 /etc/init.d/cpufreq-perf start
 
-# 首启装 apps/ 的 .apk：本次由 rc.local 在系统就绪后触发；enable 备下次启动兜底(rcS glob 已展开)
+# 首启装 apps/ 的 .apk：rc.local 系统就绪后触发；enable 备下次启动兜底
 chmod 755 /etc/init.d/firstboot-pkgs
 /etc/init.d/firstboot-pkgs enable
 
@@ -613,8 +587,7 @@ EOT
     chmod 755 "$OUT"
     echo "[diy] 输出: $OUT"
 
-    # OAF 设置与特征库首启自动更新放 rc.local：appfilter.init(START=96) 首启才生成 /etc/config/fwx，
-    # uci-defaults 早于它，抢建会丢默认段落；rc.local 为启动末步，ubus/网络已就绪。
+    # OAF 设置+特征库首启自动更新放 rc.local：appfilter.init(START=96) 首启才生成 /etc/config/fwx，uci-defaults 早于它抢建会丢段落；rc.local 为启动末步 ubus/网络已就绪。
     if [ "$WITH_OAF" = "1" ]; then
         RC_LOCAL="$FB_DIR/etc/rc.local"
         mkdir -p "$(dirname "$RC_LOCAL")"
@@ -653,7 +626,7 @@ if [ ! -f /etc/oaf-feature-autoupdate.done ]; then
 fi
 EOF
 )
-            # 置于首行：rc.local 末尾还有 firstboot-pkgs(apk 安装耗时较久)，先落地 OAF 设置
+            # 置于首行：rc.local 末尾 firstboot-pkgs(apk 安装耗时较久)，先落地 OAF 设置
             { printf '%s\n' "$OAF_RC_BLK"; grep -v '^exit 0$' "$RC_LOCAL" 2>/dev/null; echo 'exit 0'; } > "$RC_LOCAL.new" \
                 && mv "$RC_LOCAL.new" "$RC_LOCAL"
             chmod 755 "$RC_LOCAL" 2>/dev/null || true
