@@ -16,17 +16,19 @@ update() {
     done
     ubus list fwx >/dev/null 2>&1 || return 1
 
-    # 取列表：仅服务器返回 code=2000 才继续；free=1 取 count 最大的包
+    # 取列表：仅服务器返回 code=2000 才继续
     list=$(ubus call fwx common '{"api":"get_feature_online_list","data":{"refresh":1,"lang":"cn"}}' 2>/dev/null)
     [ "$(echo "$list" | jsonfilter -e '@.code' 2>/dev/null)" = "2000" ] || return 1
-    ids=$(echo "$list" | jsonfilter -e '@.data.files[@.free=1].id' 2>/dev/null)
-    cnts=$(echo "$list" | jsonfilter -e '@.data.files[@.free=1].count' 2>/dev/null)
-    [ -n "$ids" ] || return 1
-    tmp=$(mktemp -d)
-    printf '%s\n' "$ids" > "$tmp/ids"
-    printf '%s\n' "$cnts" > "$tmp/cnts"
-    best=$(paste -d' ' "$tmp/ids" "$tmp/cnts" 2>/dev/null | sort -k2 -n | tail -1 | awk '{print $1}')
-    rm -rf "$tmp"
+    # 遍历 files，挑 free=1 中 count 最大者（仅用下标访问，避开 jsonfilter 谓词过滤兼容性差异）
+    best=""; best_cnt=-1; i=0
+    while :; do
+        id=$(echo "$list" | jsonfilter -e "@.data.files[$i].id" 2>/dev/null)
+        [ -z "$id" ] && break
+        free=$(echo "$list" | jsonfilter -e "@.data.files[$i].free" 2>/dev/null)
+        cnt=$(echo "$list" | jsonfilter -e "@.data.files[$i].count" 2>/dev/null)
+        [ "$free" = "1" ] && { cnt=${cnt:-0}; [ "$cnt" -gt "$best_cnt" ] && { best="$id"; best_cnt="$cnt"; }; }
+        i=$((i+1))
+    done
     [ -n "$best" ] || return 1
 
     # 触发更新：oafd 异步下载并立即返回 code=2000=已接受；非 2000 时查状态避免重复触发
