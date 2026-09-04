@@ -587,13 +587,23 @@ EOT
     chmod 755 "$OUT"
     echo "[diy] 输出: $OUT"
 
-    # OAF 设置+特征库首启自动更新放 rc.local：appfilter.init(START=96) 首启才生成 /etc/config/fwx，uci-defaults 早于它抢建会丢段落；rc.local 为启动末步 ubus/网络已就绪。
+    # OAF 设置+特征库首启自动更新放 rc.local：appfilter.init(START=96) 首启才生成 /etc/config/fwx，uci-defaults 早于它抢建会丢段落；rc.local 为启动末步 ubus/网络已就绪；脚本成功后自清本段。
     if [ "$WITH_OAF" = "1" ]; then
+        # OAF 首启特征库更新独立脚本：仅 OAF 构建装入镜像 /usr/sbin
+        OAF_UPDATER="$SCRIPT_DIR/oaf-feature-autoupdate.sh"
+        if [ -f "$OAF_UPDATER" ]; then
+            mkdir -p "$FB_DIR/usr/sbin"
+            cp -f "$OAF_UPDATER" "$FB_DIR/usr/sbin/oaf-feature-autoupdate.sh"
+            chmod 755 "$FB_DIR/usr/sbin/oaf-feature-autoupdate.sh"
+        else
+            echo "[diy] WARN: 未找到 $OAF_UPDATER" >&2
+        fi
         RC_LOCAL="$FB_DIR/etc/rc.local"
         mkdir -p "$(dirname "$RC_LOCAL")"
         [ -f "$RC_LOCAL" ] || printf 'exit 0\n' > "$RC_LOCAL"
         if ! grep -q "LeenWrt OAF" "$RC_LOCAL"; then
             OAF_RC_BLK=$(cat <<'EOF'
+# >>> LeenWrt OAF START (首启成功后自动移除)
 # LeenWrt OAF：出厂配置覆盖（浅色/网关模式/启用过滤）
 [ -f /etc/config/fwx ] && {
     OAF_CHANGED=""
@@ -602,35 +612,16 @@ EOT
     [ "$(uci -q get fwx.appfilter.enable)" != "1" ] && { uci set fwx.appfilter.enable='1'; OAF_CHANGED=1; }
     [ -n "$OAF_CHANGED" ] && { uci commit fwx; logger -t oaf "已应用 LeenWrt 设置(浅色/网关模式/启用过滤)"; }
 }
-# LeenWrt OAF：首启经系统自带 ubus fwx 在线客户端拉官方最新免费特征库；写 flag 仅跑一次，失败下次重试
-if [ ! -f /etc/oaf-feature-autoupdate.done ]; then
-  (
-    for i in $(seq 1 30); do ping -c1 -W2 223.5.5.5 >/dev/null 2>&1 && break; sleep 2; done
-    ubus list fwx >/dev/null 2>&1 || exit 0
-    # 取列表：仅服务器返回 code=2000 才继续；free=1 取 count 最大的包
-    list=$(ubus call fwx common '{"api":"get_feature_online_list","data":{"refresh":1,"lang":"cn"}}' 2>/dev/null)
-    [ "$(echo "$list" | jsonfilter -e '@.code' 2>/dev/null)" = "2000" ] || exit 0
-    ids=$(echo "$list" | jsonfilter -e '@.data.files[@.free=1].id' 2>/dev/null)
-    cnts=$(echo "$list" | jsonfilter -e '@.data.files[@.free=1].count' 2>/dev/null)
-    [ -n "$ids" ] || exit 0
-    tmp=$(mktemp -d)
-    printf '%s\n' "$ids" > "$tmp/ids"
-    printf '%s\n' "$cnts" > "$tmp/cnts"
-    best=$(paste -d' ' "$tmp/ids" "$tmp/cnts" 2>/dev/null | sort -k2 -n | tail -1 | awk '{print $1}')
-    rm -rf "$tmp"
-    [ -n "$best" ] || exit 0
-    # 触发更新：仅返回 code=2000(已接受)才写 flag，避免错误响应也误判成功
-    resp=$(ubus call fwx common "{\"api\":\"start_feature_online_update\",\"data\":{\"id\":\"$best\",\"lang\":\"cn\"}}" 2>/dev/null)
-    [ "$(echo "$resp" | jsonfilter -e '@.code' 2>/dev/null)" = "2000" ] && touch /etc/oaf-feature-autoupdate.done
-  ) >/tmp/oaf-feature-autoupdate.log 2>&1 &
-fi
+# LeenWrt OAF：首启特征库自动更新（独立脚本，后台运行，成功后自清 rc.local）
+[ -x /usr/sbin/oaf-feature-autoupdate.sh ] && /usr/sbin/oaf-feature-autoupdate.sh >/tmp/oaf-feature-autoupdate.log 2>&1 &
+# <<< LeenWrt OAF END
 EOF
 )
             # 置于首行：rc.local 末尾 firstboot-pkgs(apk 安装耗时较久)，先落地 OAF 设置
             { printf '%s\n' "$OAF_RC_BLK"; grep -v '^exit 0$' "$RC_LOCAL" 2>/dev/null; echo 'exit 0'; } > "$RC_LOCAL.new" \
                 && mv "$RC_LOCAL.new" "$RC_LOCAL"
             chmod 755 "$RC_LOCAL" 2>/dev/null || true
-            echo "[diy] 输出: $RC_LOCAL（已追加 OAF 设置 + 特征库首启自动更新）"
+            echo "[diy] 输出: $RC_LOCAL（已追加 OAF 设置 + 特征库首启自动更新脚本调用）"
         fi
     fi
 
