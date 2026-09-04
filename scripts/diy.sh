@@ -629,13 +629,14 @@ EOT
     [ "$(uci -q get fwx.appfilter.enable)" != "1" ] && { uci set fwx.appfilter.enable='1'; OAF_CHANGED=1; }
     [ -n "$OAF_CHANGED" ] && { uci commit fwx; logger -t oaf "已应用 LeenWrt 设置(浅色/网关模式/启用过滤)"; }
 }
-# LeenWrt OAF：首启经自带在线客户端(ubus fwx, UA 正确)拉官方最新免费特征库；写 flag 仅跑一次，失败下次重试
+# LeenWrt OAF：首启经系统自带 ubus fwx 在线客户端拉官方最新免费特征库；写 flag 仅跑一次，失败下次重试
 if [ ! -f /etc/oaf-feature-autoupdate.done ]; then
   (
     for i in $(seq 1 30); do ping -c1 -W2 223.5.5.5 >/dev/null 2>&1 && break; sleep 2; done
     ubus list fwx >/dev/null 2>&1 || exit 0
+    # 取列表：仅服务器返回 code=2000 才继续；free=1 取 count 最大的包
     list=$(ubus call fwx common '{"api":"get_feature_online_list","data":{"refresh":1,"lang":"cn"}}' 2>/dev/null)
-    [ -n "$list" ] || exit 0
+    [ "$(echo "$list" | jsonfilter -e '@.code' 2>/dev/null)" = "2000" ] || exit 0
     ids=$(echo "$list" | jsonfilter -e '@.data.files[@.free=1].id' 2>/dev/null)
     cnts=$(echo "$list" | jsonfilter -e '@.data.files[@.free=1].count' 2>/dev/null)
     [ -n "$ids" ] || exit 0
@@ -644,9 +645,10 @@ if [ ! -f /etc/oaf-feature-autoupdate.done ]; then
     printf '%s\n' "$cnts" > "$tmp/cnts"
     best=$(paste -d' ' "$tmp/ids" "$tmp/cnts" 2>/dev/null | sort -k2 -n | tail -1 | awk '{print $1}')
     rm -rf "$tmp"
-    if [ -n "$best" ] && ubus call fwx common "{\"api\":\"start_feature_online_update\",\"data\":{\"id\":\"$best\",\"lang\":\"cn\"}}" >/dev/null 2>&1; then
-      touch /etc/oaf-feature-autoupdate.done
-    fi
+    [ -n "$best" ] || exit 0
+    # 触发更新：仅返回 code=2000(已接受)才写 flag，避免错误响应也误判成功
+    resp=$(ubus call fwx common "{\"api\":\"start_feature_online_update\",\"data\":{\"id\":\"$best\",\"lang\":\"cn\"}}" 2>/dev/null)
+    [ "$(echo "$resp" | jsonfilter -e '@.code' 2>/dev/null)" = "2000" ] && touch /etc/oaf-feature-autoupdate.done
   ) >/tmp/oaf-feature-autoupdate.log 2>&1 &
 fi
 EOF
