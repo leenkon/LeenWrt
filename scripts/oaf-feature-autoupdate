@@ -1,5 +1,5 @@
 #!/bin/sh /etc/rc.common
-# LeenWrt OAF 首启特征库更新：one-shot init.d(START=99)；出厂配置由 uci-defaults 设置，本脚本仅拉取特征库，成功后 disable+自删零残留。
+# LeenWrt OAF 首启特征库更新：one-shot init.d(START=99)，成功后 disable+自删零残留（出厂配置由 uci-defaults 负责）。
 START=99
 STOP=10
 
@@ -19,7 +19,7 @@ update() {
     # 取列表：仅服务器返回 code=2000 才继续
     list=$(ubus call fwx common '{"api":"get_feature_online_list","data":{"refresh":1,"lang":"cn"}}' 2>/dev/null)
     [ "$(echo "$list" | jsonfilter -e '@.code' 2>/dev/null)" = "2000" ] || return 1
-    # 遍历 files，挑 free=1 中 count 最大者（仅用下标访问，避开 jsonfilter 谓词过滤兼容性差异）
+    # 遍历 files，挑 free=1 中 count 最大者（仅下标访问，兼容所有 jsonfilter）
     best=""; best_cnt=-1; i=0
     while :; do
         id=$(echo "$list" | jsonfilter -e "@.data.files[$i].id" 2>/dev/null)
@@ -31,7 +31,7 @@ update() {
     done
     [ -n "$best" ] || return 1
 
-    # 触发更新：oafd 异步下载并立即返回 code=2000=已接受；非 2000 时查状态避免重复触发
+    # 触发更新：返回 code=2000 即已接受（oafd 异步下载）；非 2000 则按当前状态继续，避免重复触发
     resp=$(ubus call fwx common "{\"api\":\"start_feature_online_update\",\"data\":{\"id\":\"$best\",\"lang\":\"cn\"}}" 2>/dev/null)
     if [ "$(echo "$resp" | jsonfilter -e '@.code' 2>/dev/null)" != "2000" ]; then
         st=$(ubus call fwx common '{"api":"get_feature_online_update_status"}' 2>/dev/null)
