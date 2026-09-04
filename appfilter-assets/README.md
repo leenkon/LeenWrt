@@ -17,9 +17,7 @@
 在线更新客户端（`ubus call fwx common`，UA 正确）拉取官方最新**免费版**（free=1）覆盖
 `/etc/fwxd/feature.bin`，成功后写 `/etc/oaf-feature-autoupdate.done` 守护（失败则下次启动重试）。
 
-如需在构建前手动把较新特征库固化进固件（可选），用 `scripts/feature-tool.py fetch`
-（仅本机调试/固化用，不参与 CI）：
-    python scripts/feature-tool.py fetch -o appfilter-assets/feature.bin --icons appfilter-assets/oaf-icons
+> 构建期不再手动拉取/固化特征库（相关脚本已移除）；最新免费库由设备首启自动获取。
 
 图标与特征库版本可能不同步属正常；缺失图标时 LuCI 退化为首字母色块，不影响过滤功能。
 如需更新图标，手动替换本目录内容并重新提交即可。

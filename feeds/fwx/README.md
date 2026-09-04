@@ -56,17 +56,12 @@ fwx 是 fork 自 OpenAppFilter 谱系的应用层过滤栈，由 `kmod-fwx`（�
 **311 应用 + 507 图标**，约 1.2MB）。订阅包（`free=0`）才需 token。
 仓库内置 `open-app-filter/files/feature.bin` 仅为 48 条国外样板，完整库走 API。
 
-**OAF 特征库构建期刷新**：`scripts/update-feature.sh` 在 `LeenWrtBuilder.yml` 克隆
-`destan19/OpenAppFilter` 之后、编译前运行，以 `token=0` 取 `free=1` 包最新 `feature.bin`，
-覆盖 OAF 包内 48 条样板（其 Makefile 装到 `/etc/fwxd/feature.bin`）；并校验 crc，
-失败则保留样板、返回 0，不阻断离线构建。拉取成功后打印版本+应用数到日志便于审计。
-`scripts/feature-tool.py` 提供 `verify / list / fetch` 子命令（仅标准库依赖）。
-
-```sh
-scripts/feature-tool.py verify feature.bin      # 校验并打印版本/条目数
-scripts/feature-tool.py list                    # 列出官方特征库（token=0 免费档）
-scripts/feature-tool.py fetch -o feature.bin    # 拉免费库（免 token），直接投喂 OAF
-```
+**OAF 特征库（首启自动更新）**：固件烧录的是 OAF 包内 48 条样板 `feature.bin`
+（其 Makefile 装到 `/etc/fwxd/feature.bin`）。设备**首次启动**由 `diy.sh` 注入的
+`rc.local` 一次性脚本，经 OAF 自带在线更新客户端（`ubus call fwx common`，UA 正确）
+拉取官方最新 `free=1` 包（`id=2606101`，约 311 应用）覆盖之；成功后写
+`/etc/oaf-feature-autoupdate.done` 守护，失败则下次启动重试。构建期不再手动拉取
+（相关脚本已移除），以规避 CI 访问 api.openappfilter.com 不稳/易 403 的问题。
 
 > fwx 侧若需升级到 v4.0 读 feature.bin，需从 OAF master 反向移植 `fwx_feature.c/.h` 等特征子系统
 > （依赖 libcurl + json-c）并重打 DPI-clamp / nf_conn / nf_send_reset 补丁，非当前默认路径。
