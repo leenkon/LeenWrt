@@ -11,9 +11,9 @@ TABLE="inet dns_hijack"
 
 port_listen() {
     if command -v ss >/dev/null 2>&1; then
-        ss -lun 2>/dev/null | grep -q ':5353 '
+        ss -lun 2>/dev/null | grep -q ':5353'
     elif command -v netstat >/dev/null 2>&1; then
-        netstat -lun 2>/dev/null | grep -q ':5353 '
+        netstat -lun 2>/dev/null | grep -q ':5353'
     else
         return 1
     fi
@@ -38,9 +38,9 @@ RULE4=""; RULE6=""
     *)   RULE4="ip saddr != $BYPASS_IP" ;;
 esac
 
-# 单事务原子重建，避免与 adguardhome/dns-balance 并发调用致规则残留或编译失败
+# 原子重建：声明式 table{} 幂等(表不存在则建、已存在则更新 chain 规则)；
+# 勿用 delete table(表不存在时整批失败→劫持表永不创建，DNS 全走 dnsmasq 致 ADGH 零流量)
 nft -f - <<EOF
-delete table $TABLE
 table $TABLE {
     chain prerouting {
         type nat hook prerouting priority -150;
