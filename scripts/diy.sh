@@ -311,23 +311,24 @@ EOF
     # 不劫持时 REJECT lan->wan :53 强制走路由器 DNS(排除旁路由自身)
     DNS_HIJACK_REJECT_BLK=$(cat <<'EOF'
 BYPASS_IP=$(uci -q get adguardhome.config.dns_hijack_bypass_ip 2>/dev/null)
-for _z in wan wan6; do
-    uci -q get firewall.$_z >/dev/null 2>&1 || continue
-    uci -q delete firewall.reject_lan_dns_$_z
-    uci set firewall.reject_lan_dns_$_z=rule
-    uci set firewall.reject_lan_dns_$_z.name="Reject LAN->$_z :53 (force router DNS)"
-    uci set firewall.reject_lan_dns_$_z.src='lan'
-    [ -n "$BYPASS_IP" ] && uci set firewall.reject_lan_dns_$_z.src_ip="!$BYPASS_IP"
-    uci set firewall.reject_lan_dns_$_z.dest="$_z"
-    uci set firewall.reject_lan_dns_$_z.dest_port='53'
-    uci set firewall.reject_lan_dns_$_z.proto='udp tcp'
-    uci set firewall.reject_lan_dns_$_z.target='REJECT'
-done
+# zone 是匿名段，按 name 反查；uci get firewall.wan 只认具名段会静默跳过
+WAN_FW=$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
+[ -n "$WAN_FW" ] && {
+    uci -q delete firewall.reject_lan_dns_wan
+    uci set firewall.reject_lan_dns_wan=rule
+    uci set firewall.reject_lan_dns_wan.name='Reject LAN->WAN :53 (force router DNS)'
+    uci set firewall.reject_lan_dns_wan.src='lan'
+    [ -n "$BYPASS_IP" ] && uci set firewall.reject_lan_dns_wan.src_ip="!$BYPASS_IP"
+    uci set firewall.reject_lan_dns_wan.dest='wan'
+    uci set firewall.reject_lan_dns_wan.dest_port='53'
+    uci set firewall.reject_lan_dns_wan.proto='udp tcp'
+    uci set firewall.reject_lan_dns_wan.target='REJECT'
+}
 uci commit firewall
 EOF
 )
 
-    # full 共用：LAN 三态 ACCEPT + lan->wan 转发 + wan mtu_fix（不依赖上游默认 firewall，避免 lan input=REJECT 挡 LuCI 或无转发）
+    # full 共用：LAN 三态 ACCEPT + lan->wan 转发 + wan 出向(mtu_fix/NAT6)；上游默认 lan input=REJECT 会挡 LuCI
     LAN_FORWARD_BLK=$(cat <<'EOF'
 LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
 [ -n "$LAN_FW" ] && {
@@ -336,7 +337,11 @@ LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
     uci set ${LAN_FW}.forward='ACCEPT'
 }
 WAN_FW=$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
-[ -n "$WAN_FW" ] && uci set ${WAN_FW}.mtu_fix='1'
+[ -n "$WAN_FW" ] && {
+    uci set ${WAN_FW}.mtu_fix='1'
+    # masq6：masq 只管 IPv4，客户端旧前缀/ULA 源需 NAT6 才出得去；须用原生 zone 选项（手写 include 会令 fw4 整表不生成→全断网）
+    uci set ${WAN_FW}.masq6='1'
+}
 _i=0; while [ $_i -lt 16 ] && uci -q delete firewall.@forwarding[0]; do _i=$((_i+1)); done
 uci add firewall forwarding
 uci set firewall.@forwarding[-1].src='lan'
@@ -385,6 +390,7 @@ uci set network.wan.peerdns='1'
 uci set network.wan.device='eth1'
 # PPPoE MTU 1492，缺 MSS 钳制会导致大包被 PMTU 黑洞丢弃(已连接但打不开网页)
 uci set network.wan.mtu_fix='1'
+# 删库存 wan6：ipv6=auto 已自动建 wan_6 取 PD；手工 wan6 的 device=@wan 指向 eth1 而非 pppoe-wan，拿不到 PD
 uci -q delete network.wan6
 EOT
 )
@@ -394,6 +400,8 @@ uci set network.wan.proto='dhcp'
 uci set network.wan.device='eth1'
 uci set network.wan.peerdns='1'
 uci set network.wan.mtu_fix='1'
+# 上游 wan6 硬编码 ethX，须 @wan 跟随改后的 eth1
+uci set network.wan6.device='@wan'
 uci set network.wan6.proto='dhcpv6'
 uci set network.wan6.reqaddress='try'
 uci set network.wan6.reqprefix='auto'
