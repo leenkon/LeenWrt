@@ -311,8 +311,7 @@ EOF
     # 不劫持时 REJECT lan->wan :53 强制走路由器 DNS(排除旁路由自身)
     DNS_HIJACK_REJECT_BLK=$(cat <<'EOF'
 BYPASS_IP=$(uci -q get adguardhome.config.dns_hijack_bypass_ip 2>/dev/null)
-# zone 是匿名段，按 name 反查；uci get firewall.wan 只认具名段会静默跳过
-WAN_FW=$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
+WAN_FW=$(zget wan)
 [ -n "$WAN_FW" ] && {
     uci -q delete firewall.reject_lan_dns_wan
     uci set firewall.reject_lan_dns_wan=rule
@@ -327,26 +326,23 @@ WAN_FW=$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
 EOF
 )
 
-    # full 共用：LAN 三态 ACCEPT + lan->wan 转发 + wan 出向(mtu_fix/NAT6)；上游默认 lan input=REJECT 会挡 LuCI
+    # full 共用：LAN 三态 ACCEPT(上游默认 input=REJECT 会挡 LuCI) + lan->wan 转发 + wan NAT6
     LAN_FORWARD_BLK=$(cat <<'EOF'
-LAN_FW=$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
+LAN_FW=$(zget lan)
 [ -n "$LAN_FW" ] && {
     uci set ${LAN_FW}.input='ACCEPT'
     uci set ${LAN_FW}.output='ACCEPT'
     uci set ${LAN_FW}.forward='ACCEPT'
 }
-WAN_FW=$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
+WAN_FW=$(zget wan)
 [ -n "$WAN_FW" ] && {
     uci set ${WAN_FW}.mtu_fix='1'
-    # masq6：masq 只管 IPv4，客户端旧前缀/ULA 源需 NAT6 才出得去；须用原生 zone 选项（手写 include 会令 fw4 整表不生成→全断网）
+    # masq6：masq 仅 IPv4，NAT6 须用原生 zone 选项（手写 include 会令 fw4 整表不生成→全断网）
     uci set ${WAN_FW}.masq6='1'
-    # ipv6=auto 会建 wan_6 接管 IPv6 出向；默认 wan 区只列 wan6(无下划线) 漏 zone，显式纳入确保 masq6/转发覆盖
+    # ipv6=auto 建 wan_6 接管 IPv6 出向，显式纳入 wan 区确保 NAT6/转发覆盖
     [ "$(uci get network.wan.ipv6 2>/dev/null)" = "auto" ] && uci add_list ${WAN_FW}.network='wan_6'
 }
-_i=0; while [ $_i -lt 16 ] && uci -q delete firewall.@forwarding[0]; do _i=$((_i+1)); done
-uci add firewall forwarding
-uci set firewall.@forwarding[-1].src='lan'
-uci set firewall.@forwarding[-1].dest='wan'
+reset_fwd
 EOF
 )
 
@@ -410,29 +406,44 @@ uci set network.wan6.reqprefix='auto'
 EOT
 )
         fi
-        # 端口：eth1=WAN 不进桥；其余 eth* 桥接 br-lan 作 LAN（避免 lan/wan 争 eth1）
+        # 端口：eth1=WAN 不进桥；其余 eth* 桥接 br-lan 作 LAN
         PORT_BLK=$(cat <<'EOT'
-# 先删既有 br-lan device（默认配置含匿名段，不删会并存两个同名桥 → 端口双归属、LuCI 解析异常）
-for _d in $(uci show network 2>/dev/null | sed -n "s/^\(network\.[^.]*\)\.name='br-lan'$/\1/p"); do
-  uci -q delete "$_d"
-done
 _lan_eth=$(ls /sys/class/net 2>/dev/null | grep -E '^eth[0-9]+$' | grep -v '^eth1$' | sort -V)
-uci set network.br_lan=device
-uci set network.br_lan.name='br-lan'
-uci set network.br_lan.type='bridge'
-uci -q delete network.br_lan.ports
-for _e in $_lan_eth; do uci add_list network.br_lan.ports="$_e"; done
-uci set network.lan.device='br-lan'
-uci -q delete network.lan.type
-uci -q delete network.lan.ports
-uci -q delete network.lan.ifname
-uci commit network
+rebuild_brlan "$_lan_eth"
 EOT
 )
     fi
 
     echo '#!/bin/sh' > "$OUT"
     echo "logger -t uci-defaults \"开始应用${PROFILE_TYPE}配置\"" >> "$OUT"
+    # 生成脚本内复用的辅助函数
+    cat >> "$OUT" <<'EOT'
+# 防火墙 zone 为匿名段，按 name 反查段名（uci get firewall.wan 取不到）
+zget(){ uci show firewall 2>/dev/null | sed -n "s/^\(firewall\.[^.]*\)\.name='$1'\$/\1/p"; }
+# 清空并重建 lan->wan 转发
+reset_fwd(){
+  _i=0; while [ $_i -lt 16 ] && uci -q delete firewall.@forwarding[0]; do _i=$((_i+1)); done
+  uci add firewall forwarding
+  uci set firewall.@forwarding[-1].src='lan'
+  uci set firewall.@forwarding[-1].dest='wan'
+}
+# 重建 br-lan：删既有同名桥，桥接给定网口列表
+rebuild_brlan(){
+  for _d in $(uci show network 2>/dev/null | sed -n "s/^\(network\.[^.]*\)\.name='br-lan'\$/\1/p"); do
+    uci -q delete "$_d"
+  done
+  uci set network.br_lan=device
+  uci set network.br_lan.name='br-lan'
+  uci set network.br_lan.type='bridge'
+  uci -q delete network.br_lan.ports
+  for _e in $1; do uci add_list network.br_lan.ports="$_e"; done
+  uci set network.lan.device='br-lan'
+  uci -q delete network.lan.type
+  uci -q delete network.lan.ports
+  uci -q delete network.lan.ifname
+  uci commit network
+}
+EOT
 
     if [ "$PROFILE_TYPE" = "bypass" ]; then
         gw_esc=$(_escape_uci "$CUSTOM_GATEWAY")
@@ -464,43 +475,26 @@ uci -q delete network.wan
 uci -q delete network.wan6
 uci commit network
 
-# 旁路由：所有网口桥接为 LAN，重建 br-lan（与 LeenWrt2 对齐；全口 LAN 可插任意口）
+# 旁路由：全口 LAN 桥接 br-lan（与 LeenWrt2 对齐，可插任意口）
 _fw_all=\$(ls /sys/class/net 2>/dev/null | grep -E '^eth[0-9]+\$' | sort -V)
-if [ -n "\$_fw_all" ]; then
-  for _d in \$(uci show network 2>/dev/null | sed -n "s/^\(network\.[^.]*\)\.name='br-lan'\$/\1/p"); do
-    uci -q delete "\$_d"
-  done
-  uci set network.br_lan=device
-  uci set network.br_lan.name='br-lan'
-  uci set network.br_lan.type='bridge'
-  uci -q delete network.br_lan.ports
-  for _e in \$_fw_all; do
-    uci add_list network.br_lan.ports="\$_e"
-  done
-  uci set network.lan.device='br-lan'
-  uci -q delete network.lan.type
-  uci -q delete network.lan.ports
-  uci -q delete network.lan.ifname
-  uci commit network
-fi
+[ -n "\$_fw_all" ] && rebuild_brlan "\$_fw_all"
 
         uci set dhcp.lan.ignore='1'
         uci set dhcp.lan6.ignore='1'
         uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
-        # dnsmasq 上游/劫持表由 dns-balance 管理，此处不写
         uci commit dhcp
 
-LAN_FW=\$(uci show firewall | grep "\.name='lan'" | cut -d. -f1-2)
-WAN_FW=\$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
+LAN_FW=\$(zget lan)
 [ -n "\$LAN_FW" ] && {
     uci set \${LAN_FW}.masq='1'
     uci set \${LAN_FW}.mtu_fix='1'
 }
+WAN_FW=\$(zget wan)
 [ -n "\$WAN_FW" ] && {
     uci set \${WAN_FW}.network=''
     uci set \${WAN_FW}.masq='0'
 }
-_i=0; while [ \$_i -lt 16 ] && uci -q delete firewall.@forwarding[0]; do _i=\$((\$_i+1)); done
+reset_fwd
 uci commit firewall
 
 $BYPASS_OC_ADGH_BLK
