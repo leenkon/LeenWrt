@@ -7,6 +7,8 @@ if ! command -v nft >/dev/null 2>&1; then
     exit 0
 fi
 
+TABLE="inet dns_hijack"
+
 port_listen() {
     if command -v ss >/dev/null 2>&1; then
         ss -lun 2>/dev/null | grep -q ':5353 '
@@ -17,35 +19,35 @@ port_listen() {
     fi
 }
 
+# ADGH 未装/未监听：清表回退 dnsmasq :53（零抖动），退出
+if [ ! -x /usr/bin/AdGuardHome ] || ! port_listen; then
+    nft delete table $TABLE 2>/dev/null
+    exit 0
+fi
+
 # 防抖：已监听且规则就位则跳过，避免周期性拆表致 DNS 瞬时回落
-if port_listen && nft list table inet dns_hijack 2>/dev/null | grep -q 'dport 53 redirect to :5353'; then
+if nft list table $TABLE 2>/dev/null | grep -q 'dport 53 redirect to :5353'; then
     exit 0
 fi
 
-nft delete table inet dns_hijack 2>/dev/null
-
-# 未装/未监听 ADGH 直接退出，dnsmasq :53 兜底
-if [ ! -x /usr/bin/AdGuardHome ]; then
-    logger -t dns-hijack "AdGuardHome 未安装，跳过劫持（回退 dnsmasq :53）"
-    exit 0
-fi
-if ! port_listen; then
-    logger -t dns-hijack "AdGuardHome 未在监听 :5353，清劫持回退 dnsmasq :53（零抖动）"
-    exit 0
-fi
-
-nft add table inet dns_hijack
-nft add chain inet dns_hijack prerouting '{ type nat hook prerouting priority -150; }'
-
-BYPASS_IP=$(uci -q get adguardhome.config.dns_hijack_bypass_ip 2>/dev/null)
 # 按地址族排除旁路，避免错配致 nft 编译失败
+BYPASS_IP=$(uci -q get adguardhome.config.dns_hijack_bypass_ip 2>/dev/null)
 RULE4=""; RULE6=""
 [ -n "$BYPASS_IP" ] && case "$BYPASS_IP" in
     *:*) RULE6="ip6 saddr != $BYPASS_IP" ;;
     *)   RULE4="ip saddr != $BYPASS_IP" ;;
 esac
 
-nft add rule inet dns_hijack prerouting iifname "br-lan" ${RULE4:-} udp dport 53 redirect to :5353
-nft add rule inet dns_hijack prerouting iifname "br-lan" ${RULE4:-} tcp dport 53 redirect to :5353
-nft add rule inet dns_hijack prerouting iifname "br-lan" meta nfproto ipv6 ${RULE6:-} udp dport 53 redirect to :5353
-nft add rule inet dns_hijack prerouting iifname "br-lan" meta nfproto ipv6 ${RULE6:-} tcp dport 53 redirect to :5353
+# 单事务原子重建，避免与 adguardhome/dns-balance 并发调用致规则残留或编译失败
+nft -f - <<EOF
+delete table $TABLE
+table $TABLE {
+    chain prerouting {
+        type nat hook prerouting priority -150;
+        iifname "br-lan" ${RULE4:-} udp dport 53 redirect to :5353
+        iifname "br-lan" ${RULE4:-} tcp dport 53 redirect to :5353
+        iifname "br-lan" meta nfproto ipv6 ${RULE6:-} udp dport 53 redirect to :5353
+        iifname "br-lan" meta nfproto ipv6 ${RULE6:-} tcp dport 53 redirect to :5353
+    }
+}
+EOF

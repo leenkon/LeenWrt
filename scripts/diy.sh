@@ -324,7 +324,6 @@ WAN_FW=$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
     uci set firewall.reject_lan_dns_wan.proto='udp tcp'
     uci set firewall.reject_lan_dns_wan.target='REJECT'
 }
-uci commit firewall
 EOF
 )
 
@@ -341,6 +340,8 @@ WAN_FW=$(uci show firewall | grep "\.name='wan'" | cut -d. -f1-2)
     uci set ${WAN_FW}.mtu_fix='1'
     # masq6：masq 只管 IPv4，客户端旧前缀/ULA 源需 NAT6 才出得去；须用原生 zone 选项（手写 include 会令 fw4 整表不生成→全断网）
     uci set ${WAN_FW}.masq6='1'
+    # ipv6=auto 会建 wan_6 接管 IPv6 出向；默认 wan 区只列 wan6(无下划线) 漏 zone，显式纳入确保 masq6/转发覆盖
+    [ "$(uci get network.wan.ipv6 2>/dev/null)" = "auto" ] && uci add_list ${WAN_FW}.network='wan_6'
 }
 _i=0; while [ $_i -lt 16 ] && uci -q delete firewall.@forwarding[0]; do _i=$((_i+1)); done
 uci add firewall forwarding
@@ -374,6 +375,7 @@ uci set dhcp.lan.ra='server'
 uci set dhcp.lan.ra_default='1'
 uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
+uci commit dhcp
 EOF
 )
 
