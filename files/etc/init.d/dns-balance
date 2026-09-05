@@ -1,8 +1,7 @@
 #!/bin/sh /etc/rc.common
-# 独立常驻 DNS 自愈合：与 ADGH/OC 生命周期解耦，每 5s 探 ADGH(:5353) 与 OC(:7874) 真实监听态，
-# 仅状态变化时分别重建劫持表(/usr/sbin/dns-hijack) 与重排 dnsmasq 上游(set_upstream)。
-# 覆盖 ADGH 装/卸/崩 与 OC 装/卸/启停 的全部组合；set_upstream 幂等，是 dnsmasq 上游唯一管理者
-# （diy.sh / firstboot-pkgs 不再写上游，仅 ADGH/OC 配置与劫持开关，避免双处写上游漂移）。
+# 事件驱动 DNS 自愈合：ADGH/OC/dhcp 配置变更与接口 up 经 procd trigger 即时重建劫持表与 dnsmasq 上游；
+# 60s 看门狗仅补"OC 崩溃被 procd 拉起"等无显式事件触发的边界(替代原 5s 轮询)。与 ADGH/OC 生命周期解耦；
+# set_upstream 幂等(仅状态真变化才 restart dnsmasq)，是 dnsmasq 上游唯一管理者。
 USE_PROCD=1
 START=20
 STOP=80
@@ -46,23 +45,39 @@ set_upstream() {
 	/etc/init.d/dnsmasq restart 2>/dev/null
 }
 
-dns_balance_loop() {
+reconcile() {
+	/usr/sbin/dns-hijack
+	set_upstream
+}
+
+reconcile_loop() {
+	reconcile
 	while true; do
-		/usr/sbin/dns-hijack
-		set_upstream
-		sleep 5
+		sleep 60
+		reconcile
 	done
 }
 
 start_service() {
 	procd_open_instance dns-balance
-	procd_set_param command /bin/sh -c '. /etc/init.d/dns-balance; dns_balance_loop'
+	procd_set_param command /bin/sh -c '. /etc/init.d/dns-balance; reconcile_loop'
 	procd_set_param respawn
 	procd_close_instance
+}
+
+reload_service() {
+	reconcile
 }
 
 # 停止：dns-hijack 按 ADGH 监听态保留或自清劫持；dnsmasq 上游由 set_upstream 归位
 stop_service() {
 	/usr/sbin/dns-hijack 2>/dev/null
 	set_upstream 2>/dev/null
+}
+
+service_triggers() {
+	procd_add_reload_trigger adguardhome
+	procd_add_reload_trigger openclash
+	procd_add_reload_trigger dhcp
+	procd_add_raw_trigger 'interface.*.up' 5000 /etc/init.d/dns-balance reload
 }
