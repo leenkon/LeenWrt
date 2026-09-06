@@ -17,18 +17,21 @@ is_valid_ipv4() {
     return 0
 }
 
-# fwx 源码补丁：上下文不符即 fail-fast（静默跳过曾致 fwx 过滤 panic）
+# 源码补丁：上下文不符即 fail-fast（静默跳过曾致 fwx 过滤 panic）；fuzz 命中同样拒绝（锚点不可信）
 _apply_fwx_src_patch() {
     local name="$1" patch="$2" target="${3:-$PROJECT_ROOT/feeds/fwx/fwx}"
+    local log="/tmp/.diy_patch_$$.log"
     [ -f "$patch" ] || error_exit "未找到 $name 补丁: $patch"
     [ -d "$target" ] || error_exit "未找到 $name 目标目录: $target（feeds/fwx 未就绪？）"
     if patch -p1 --reverse --dry-run -d "$target" < "$patch" >/dev/null 2>&1; then
         echo "[diy] $name 已应用，跳过"
-    elif patch -p1 --dry-run -d "$target" < "$patch" >/dev/null 2>&1; then
+    elif patch -p1 --dry-run -d "$target" < "$patch" >"$log" 2>&1 && ! grep -qi fuzz "$log"; then
         patch -p1 -d "$target" < "$patch"
         echo "[diy] applied $name -> $target"
+    elif grep -qi fuzz "$log" 2>/dev/null; then
+        error_exit "$name 补丁 fuzz 命中（上下文漂移，锚点不可信），拒绝应用（详见 $patch）"
     else
-        error_exit "$name 补丁上下文不符，未应用（详见 $patch）；fwx 版本漂移需重新钉点"
+        error_exit "$name 补丁上下文不符，未应用（详见 $patch）；版本漂移需重新钉点"
     fi
 }
 
@@ -161,6 +164,22 @@ before)
         echo "[diy] fwx 补丁自检通过(src 已含 DPI 钳制)，已 touch Makefile 强制重编"
     fi
 
+    ;;
+
+oaf)
+    # 上游 OAF 源码未修 DPI 越界（l4_len 负值回绕 → read_skb 收到 ≈4GB 长度 → order=20 WARN/panic）。
+    # workflow 克隆 package/OpenAppFilter 后调用本阶段（before 阶段时源码尚不存在）。
+    echo "[diy] oaf: 应用 DPI bounds 补丁到 OpenAppFilter"
+    OAF_DIR="$PROJECT_ROOT/openwrt/package/OpenAppFilter/oaf"
+    _apply_fwx_src_patch "OAF DPI bounds" "$PROJECT_ROOT/patches/oaf/oaf-dpi-skb-bounds.patch" "$OAF_DIR"
+    # 自检闸门 + touch 包 Makefile（无 PKG_RELEASE，防复用旧 .o 静默产出未打补丁 oaf.ko）
+    OAF_MAIN_C="$OAF_DIR/src/fwx_main.c"
+    [ -f "$OAF_MAIN_C" ] || error_exit "OAF 源码缺失: $OAF_MAIN_C（workflow 是否已 clone OpenAppFilter？）"
+    if ! grep -q "skb_tail_pointer" "$OAF_MAIN_C"; then
+        error_exit "OAF DPI 补丁未生效：fwx_main.c 缺少 skb_tail_pointer 钳制 → 行为管理将内核 panic"
+    fi
+    touch "$OAF_DIR/Makefile" 2>/dev/null || true
+    echo "[diy] OAF 补丁自检通过(src 已含 DPI 钳制)，已 touch Makefile 强制重编"
     ;;
 
 ruby)
@@ -615,7 +634,7 @@ EOT
         chmod 600 "$SHADOW" 2>/dev/null || true
     fi
     ;;
-*) error_exit "PHASE仅支持 before / config / themes / ruby / after" ;;
+*) error_exit "PHASE仅支持 before / config / themes / ruby / oaf / after" ;;
 esac
 
 echo "[diy] done: $PHASE ${PROFILE_TYPE:-N/A}"

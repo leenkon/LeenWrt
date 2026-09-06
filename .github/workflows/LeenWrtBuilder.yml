@@ -137,6 +137,8 @@ jobs:
                    feeds/packages/net/open-app-filter feeds/luci/applications/luci-app-appfilter
             timeout 180 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
             echo "[build] OAF 上游: $(git -C package/OpenAppFilter log -1 --format='%h %ad' --date=short)"
+            # DPI bounds 补丁：上游未修，l4_len 负值回绕致 read_skb 请求 ≈4GB → order=20 WARN/panic；克隆后立即打补丁+自检
+            $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p oaf
 
             # 特征库不在构建期拉取（CI 访问 api.openappfilter.com 不稳且易 403）；
             # 改为设备首启经 OAF 自带在线更新客户端（ubus fwx，UA 正确）自动拉最新免费版（diy.sh 注入 rc.local）。
