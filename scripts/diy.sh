@@ -17,7 +17,7 @@ is_valid_ipv4() {
     return 0
 }
 
-# 源码补丁：上下文不符即 fail-fast（静默跳过曾致 fwx 过滤 panic）；fuzz 命中同样拒绝（锚点不可信）
+# 源码补丁：上下文不符/fuzz 命中一律 fail-fast（静默跳过曾致 fwx 过滤 panic，fuzz 锚点不可信）
 _apply_fwx_src_patch() {
     local name="$1" patch="$2" target="${3:-$PROJECT_ROOT/feeds/fwx/fwx}"
     local log="/tmp/.diy_patch_$$.log"
@@ -28,11 +28,19 @@ _apply_fwx_src_patch() {
     elif patch -p1 --dry-run -d "$target" < "$patch" >"$log" 2>&1 && ! grep -qi fuzz "$log"; then
         patch -p1 -d "$target" < "$patch"
         echo "[diy] applied $name -> $target"
-    elif grep -qi fuzz "$log" 2>/dev/null; then
-        error_exit "$name 补丁 fuzz 命中（上下文漂移，锚点不可信），拒绝应用（详见 $patch）"
     else
-        error_exit "$name 补丁上下文不符，未应用（详见 $patch）；版本漂移需重新钉点"
+        cat "$log" >&2 2>/dev/null || true
+        error_exit "$name 补丁上下文不符或 fuzz 命中，未应用（详见 $patch）；版本漂移需重新钉点"
     fi
+}
+
+# DPI 补丁自检闸门：skb_tail_pointer 须真实落入源码；Makefile 无 PKG_RELEASE，touch 防复用旧 .o 静默产出未打补丁 .ko
+_gate_dpi_patch() {
+    local tag="$1" src="$2" mk="$3"
+    [ -f "$src" ] || error_exit "$tag 源码缺失: $src"
+    grep -q skb_tail_pointer "$src" || error_exit "$tag DPI 补丁未生效：$src 缺 skb_tail_pointer 钳制 → 行为管理将内核 panic"
+    touch "$mk" 2>/dev/null || true
+    echo "[diy] $tag 补丁自检通过，已 touch Makefile 强制重编"
 }
 
 DEF_MAIN_IP="10.10.10.1"
@@ -153,33 +161,17 @@ before)
         _apply_fwx_src_patch "fwx DPI bounds" "$PROJECT_ROOT/patches/fwx/fwx-match-feature-crash.patch"
         _apply_fwx_src_patch "fwxd internet check" "$PROJECT_ROOT/patches/fwx/fwxd-internet-check-dns-agnostic.patch" "$PROJECT_ROOT/feeds/fwx/fwxd"
 
-        # 自检闸门：DPI 钳制(skb_tail_pointer)须真实落入 fwx_main.c。fwx Makefile 无 PKG_RELEASE，须 touch 强制重编，否则复用旧 .o 静默产出未打补丁 fwx.ko
-        FWX_MAIN_C="$PROJECT_ROOT/feeds/fwx/fwx/src/fwx_main.c"
-        [ -f "$FWX_MAIN_C" ] || error_exit "fwx 源码缺失: $FWX_MAIN_C（sync-fwx 未拉取？）"
-        if ! grep -q "skb_tail_pointer" "$FWX_MAIN_C"; then
-            error_exit "DPI 补丁未生效：fwx_main.c 缺少 skb_tail_pointer 钳制 → 行为管理将内核 panic"
-        fi
-        # 强制 OpenWrt 重新 prepare/编译 fwx（Makefile 无 PKG_RELEASE，避免复用旧 build_dir 对象）
-        touch "$PROJECT_ROOT/feeds/fwx/fwx/Makefile" 2>/dev/null || true
-        echo "[diy] fwx 补丁自检通过(src 已含 DPI 钳制)，已 touch Makefile 强制重编"
+        _gate_dpi_patch "fwx" "$PROJECT_ROOT/feeds/fwx/fwx/src/fwx_main.c" "$PROJECT_ROOT/feeds/fwx/fwx/Makefile"
     fi
 
     ;;
 
 oaf)
-    # 上游 OAF 源码未修 DPI 越界（l4_len 负值回绕 → read_skb 收到 ≈4GB 长度 → order=20 WARN/panic）。
-    # workflow 克隆 package/OpenAppFilter 后调用本阶段（before 阶段时源码尚不存在）。
-    echo "[diy] oaf: 应用 DPI bounds 补丁到 OpenAppFilter"
+    # 上游未修 DPI 越界（l4_len 负值回绕 → read_skb 收到 ≈4GB → order=20 WARN/panic）；OAF 克隆后才可调用（before 阶段源码尚不存在）
+    echo "[diy] oaf: 应用 DPI bounds 补丁"
     OAF_DIR="$PROJECT_ROOT/openwrt/package/OpenAppFilter/oaf"
     _apply_fwx_src_patch "OAF DPI bounds" "$PROJECT_ROOT/patches/oaf/oaf-dpi-skb-bounds.patch" "$OAF_DIR"
-    # 自检闸门 + touch 包 Makefile（无 PKG_RELEASE，防复用旧 .o 静默产出未打补丁 oaf.ko）
-    OAF_MAIN_C="$OAF_DIR/src/fwx_main.c"
-    [ -f "$OAF_MAIN_C" ] || error_exit "OAF 源码缺失: $OAF_MAIN_C（workflow 是否已 clone OpenAppFilter？）"
-    if ! grep -q "skb_tail_pointer" "$OAF_MAIN_C"; then
-        error_exit "OAF DPI 补丁未生效：fwx_main.c 缺少 skb_tail_pointer 钳制 → 行为管理将内核 panic"
-    fi
-    touch "$OAF_DIR/Makefile" 2>/dev/null || true
-    echo "[diy] OAF 补丁自检通过(src 已含 DPI 钳制)，已 touch Makefile 强制重编"
+    _gate_dpi_patch "OAF" "$OAF_DIR/src/fwx_main.c" "$OAF_DIR/Makefile"
     ;;
 
 ruby)
