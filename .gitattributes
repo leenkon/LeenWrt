@@ -7,3 +7,4 @@
 *.yaml text eol=lf
 files/usr/sbin/dns-hijack text eol=lf
 files/etc/hotplug.d/iface/99-adgh-filters text eol=lf
+*.patch text eol=lf
