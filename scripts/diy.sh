@@ -321,6 +321,13 @@ EOF
 
     # 不劫持时 REJECT lan->wan :53 强制走路由器 DNS(排除旁路由自身)
     DNS_HIJACK_REJECT_BLK=$(cat <<'EOF'
+# 不劫持：强制客户端走路由器 DNS(经 dnsmasq->ADGH)，故 lan.dns 须指向本机而非公网，
+# 否则 REJECT lan->wan:53 会把客户端拿到的公网 DNS 查询直接丢弃->断网
+LAN_IP=$(uci -q get network.lan.ipaddr 2>/dev/null)
+[ -n "$LAN_IP" ] && {
+    uci -q delete network.lan.dns
+    uci add_list network.lan.dns="$LAN_IP"
+}
 BYPASS_IP=$(uci -q get adguardhome.config.dns_hijack_bypass_ip 2>/dev/null)
 WAN_FW=$(zget wan)
 [ -n "$WAN_FW" ] && {
