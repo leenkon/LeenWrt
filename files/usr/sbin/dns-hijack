@@ -8,6 +8,7 @@ if ! command -v nft >/dev/null 2>&1; then
 fi
 
 TABLE="inet dns_hijack"
+STATE="/var/run/dns-hijack.bypass"
 
 port_listen() {
     if command -v ss >/dev/null 2>&1; then
@@ -19,19 +20,23 @@ port_listen() {
     fi
 }
 
-# ADGH 未装/未监听：清表回退 dnsmasq :53（零抖动），退出
+# ADGH 未装/未监听：清表回退 dnsmasq :53（零抖动），清签名退出
 if [ ! -x /usr/bin/AdGuardHome ] || ! port_listen; then
     nft delete table $TABLE 2>/dev/null
+    rm -f "$STATE" 2>/dev/null
     exit 0
 fi
 
-# 防抖：已监听且规则就位则跳过，避免周期性拆表致 DNS 瞬时回落
-if nft list table $TABLE 2>/dev/null | grep -q 'dport 53 redirect to :5353'; then
+BYPASS_IP=$(uci -q get adguardhome.config.dns_hijack_bypass_ip 2>/dev/null)
+
+# 防抖：已监听且规则就位且旁路配置未变则跳过，避免周期性拆表致 DNS 瞬时回落；
+# 旁路变更(STATE 不一致)必须重建，否则旧规则残留致新旁路不生效（违背 0 防抖）。
+if nft list table $TABLE 2>/dev/null | grep -q 'dport 53 redirect to :5353' \
+   && [ "$(cat "$STATE" 2>/dev/null)" = "${BYPASS_IP:-}" ]; then
     exit 0
 fi
 
 # 按地址族排除旁路，避免错配致 nft 编译失败
-BYPASS_IP=$(uci -q get adguardhome.config.dns_hijack_bypass_ip 2>/dev/null)
 RULE4=""; RULE6=""
 [ -n "$BYPASS_IP" ] && case "$BYPASS_IP" in
     *:*) RULE6="ip6 saddr != $BYPASS_IP" ;;
@@ -51,3 +56,5 @@ table $TABLE {
     }
 }
 EOF
+
+echo "${BYPASS_IP:-}" > "$STATE" 2>/dev/null
