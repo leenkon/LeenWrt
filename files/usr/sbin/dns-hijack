@@ -43,9 +43,12 @@ RULE4=""; RULE6=""
     *)   RULE4="ip saddr != $BYPASS_IP" ;;
 esac
 
-# 原子重建：声明式 table{} 幂等(表不存在则建、已存在则更新 chain 规则)；
-# 勿用 delete table(表不存在时整批失败→劫持表永不创建，DNS 全走 dnsmasq 致 ADGH 零流量)
+# 原子重建：flush table + 声明式规则同在一个 nft -f 事务，flush 与加载一次生效，无中间态抖动。
+# 勿省 flush：nft -f 对已存在 chain 是 append 语义，重复执行规则逐次累积，旧的无排除规则先匹配
+# 会让旁路变更失效。勿用 delete table：表不存在时整批回滚→劫持表永不创建（先 add table 保证存在）。
+nft add table $TABLE 2>/dev/null || { logger -t dns-hijack "ERROR: nft add table failed"; exit 0; }
 nft -f - <<EOF
+flush table $TABLE
 table $TABLE {
     chain prerouting {
         type nat hook prerouting priority -150;
@@ -56,5 +59,9 @@ table $TABLE {
     }
 }
 EOF
-
-echo "${BYPASS_IP:-}" > "$STATE" 2>/dev/null
+_rc=$?
+if [ "$_rc" -eq 0 ]; then
+    echo "${BYPASS_IP:-}" > "$STATE" 2>/dev/null
+else
+    logger -t dns-hijack "ERROR: nft ruleset apply failed (rc=$_rc)"
+fi

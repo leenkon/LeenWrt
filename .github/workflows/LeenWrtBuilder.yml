@@ -51,8 +51,7 @@ jobs:
           # 使 DPI bounds 补丁在 diy.sh before 能干净应用, 避免开启过滤触发内核 panic
           $GITHUB_WORKSPACE/scripts/sync-fwx.sh "$FWX_COMMIT"
           echo "[ci] fwx 核心已按钉点 $FWX_COMMIT 拉取(不追分支头)"
-          # 注：特征库刷新现为 OAF 专用（OAF 读 feature.bin，见下方 OAF 克隆后注入）；
-          # fwx 沿用 sync-fwx 拉取的钉点 feature.cfg，不再单独刷新。
+          # 注：fwx 沿用 sync-fwx 拉取的钉点 feature.cfg；OAF 特征库走设备首启在线更新（见 OAF 段）。
 
       # 注：fanchmwrt 主题由上方「同步 fwx 核心」(sync-fwx.sh) 在 fwx 开启时一并拉取；关 fwx 不需要，故不再单独拉取。
 
@@ -73,7 +72,7 @@ jobs:
           FEEDS_FILE_ABS="$GITHUB_WORKSPACE/$FEEDS_FILE"
           FILES_DIR_ABS="$GITHUB_WORKSPACE/$FILES_DIR"
           # 修复 Windows 提交可能带来的 CRLF（路由器 ash 不兼容），覆盖脚本/YAML/init.d
-          find $GITHUB_WORKSPACE -type f \( -name "*.sh" -o -name "*.yaml" -o -name "dns-hijack" -o -name "99-adgh-filters" -o -path "*/init.d/*" \) \
+          find $GITHUB_WORKSPACE -type f \( -name "*.sh" -o -name "*.yaml" -o -name "dns-hijack" -o -path "*/init.d/*" \) \
             -exec sed -i 's/\r$//' {} + 2>/dev/null || true
           cd openwrt
           case "${{ github.event.inputs.profile }}" in
@@ -142,7 +141,8 @@ jobs:
             $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p oaf
 
             # 特征库不在构建期拉取（CI 访问 api.openappfilter.com 不稳且易 403）；
-            # 改为设备首启经 OAF 自带在线更新客户端（ubus fwx，UA 正确）自动拉最新免费版（diy.sh 注入 rc.local）。
+            # 改为设备首启经 OAF 自带在线更新客户端（ubus fwx）自动拉最新免费版，
+            # 由 diy.sh after 阶段注入 /etc/init.d/oaf-feature-autoupdate + rc.d/S99 软链。
 
             # 图标注入：LuCI 读 resources/oaf/app_icons/<appId>.png（vendored 静态缓存；设备首启自动更新会一并刷新）
             OAF_ICONS="$GITHUB_WORKSPACE/appfilter-assets/oaf-icons"
@@ -156,7 +156,9 @@ jobs:
           fi
 
           ./scripts/feeds install -a -f
-          cp $GITHUB_WORKSPACE/configs/${CONFIG_PREFIX}-${CFG_PREFIX}.config .config
+          # seed .config = 公共段 + 该 profile 独有段（版本前缀由 MAIN_VER 推导，勿另设双源配置）
+          cat $GITHUB_WORKSPACE/configs/${MAIN_VER}-common.config \
+              $GITHUB_WORKSPACE/configs/${MAIN_VER}-${CFG_PREFIX}.config > .config
           sed -i 's/\r$//' .config
           # 主题默认按 WITH_FWX 由 diy.sh config 阶段追加（关 fwx=argon；开 fwx=fanchmwrt）；seed .config 不再写死
           $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p config -t $RUN_TYPE $FWX_FLAG

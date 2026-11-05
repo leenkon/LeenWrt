@@ -42,15 +42,17 @@ update() {
         esac
     fi
 
-    # 轮询直到成功/失败（最多 ~10min）；成功才自清，失败保留下次启动重试
+    # 轮询直到成功/失败（最多 ~10min）；仅 success 才自清，超时/无响应/失败一律保留下次启动重试
+    ok=0
     for i in $(seq 1 60); do
         case "$(ubus call fwx common '{"api":"get_feature_online_update_status"}' 2>/dev/null | jsonfilter -e '@.data.state' 2>/dev/null)" in
-            success) break ;;
+            success) ok=1; break ;;
             failed)  return 1 ;;
         esac
         sleep 10
     done
 
+    [ "$ok" = "1" ] || return 1
     self_clear
     return 0
 }

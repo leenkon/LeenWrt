@@ -7,12 +7,15 @@ START=20
 STOP=80
 
 oc_listening() {
-	[ -x /etc/init.d/openclash ] && grep -qi ':1ec2 ' /proc/net/tcp /proc/net/tcp6 2>/dev/null
+	# OC DNS 可能仅监听 UDP；/proc/net/{tcp,udp} 端口均为十六进制 1EC2(7874)。
+	# 用 cat 汇总再 grep：部分内核无 tcp6/udp6，缺失文件不应让 grep 返回错误码
+	[ -x /etc/init.d/openclash ] && cat /proc/net/tcp /proc/net/tcp6 /proc/net/udp /proc/net/udp6 2>/dev/null | grep -qi ':1ec2 '
 }
 
 # 按 OC(:7874) 实际监听态与网络拓扑设置 dnsmasq 上游；幂等，仅变化时重写并 restart。
 set_upstream() {
-	cur=$(uci -q get dhcp.@dnsmasq[0].server)
+	# uci get 对 list 逐行输出(换行分隔)，与 _desired 比较前须同样归一化，否则每次看门狗都误判变化
+	cur=$(uci -q get dhcp.@dnsmasq[0].server 2>/dev/null | tr '\n' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')
 	_oc=""; oc_listening && _oc='127.0.0.1#7874'
 	_desired=""
 	for s in $cur; do
@@ -26,7 +29,7 @@ set_upstream() {
 			_desired=$(uci -q get network.lan.gateway)
 		fi
 	fi
-	_desired=$(echo "$_oc $_desired" | tr -s ' ' | sed 's/^ //; s/ $//')
+	_desired=$(printf '%s\n' "$_oc $_desired" | tr '\n' ' ' | tr -s ' ' | sed 's/^ //; s/ $//')
 	[ "$cur" = "$_desired" ] && return 0
 	uci -q delete dhcp.@dnsmasq[0].port
 	uci set dhcp.@dnsmasq[0].noresolv='1'

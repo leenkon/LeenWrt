@@ -17,9 +17,9 @@ is_valid_ipv4() {
     return 0
 }
 
-# 源码补丁：上下文不符/fuzz 命中一律 fail-fast（静默跳过曾致 fwx 过滤 panic，fuzz 锚点不可信）
+# 源码补丁：fuzz 命中一律 fail-fast（锚点漂移静默命中不可信）；soft=1 时上下文不符返回 2 由调用方判断是否让位
 _apply_fwx_src_patch() {
-    local name="$1" patch="$2" target="${3:-$PROJECT_ROOT/feeds/fwx/fwx}"
+    local name="$1" patch="$2" target="${3:-$PROJECT_ROOT/feeds/fwx/fwx}" soft="${4:-0}"
     local log="/tmp/.diy_patch_$$.log"
     [ -f "$patch" ] || error_exit "未找到 $name 补丁: $patch"
     [ -d "$target" ] || error_exit "未找到 $name 目标目录: $target（feeds/fwx 未就绪？）"
@@ -28,9 +28,14 @@ _apply_fwx_src_patch() {
     elif patch -p1 --dry-run -d "$target" < "$patch" >"$log" 2>&1 && ! grep -qi fuzz "$log"; then
         patch -p1 -d "$target" < "$patch"
         echo "[diy] applied $name -> $target"
+    elif grep -qi fuzz "$log" 2>/dev/null; then
+        cat "$log" >&2 2>/dev/null || true
+        error_exit "$name 补丁 fuzz 命中（上下文漂移，锚点不可信），拒绝应用（详见 $patch）"
+    elif [ "$soft" = "1" ]; then
+        return 2
     else
         cat "$log" >&2 2>/dev/null || true
-        error_exit "$name 补丁上下文不符或 fuzz 命中，未应用（详见 $patch）；版本漂移需重新钉点"
+        error_exit "$name 补丁上下文不符，未应用（详见 $patch）；版本漂移需重新钉点"
     fi
 }
 
@@ -141,14 +146,8 @@ before)
                     *) error_exit "950 补丁针对 ${FWX_KERNEL_BASELINE} 系列内核，当前 ${FWX_KERN_VER} 不匹配。请重新生成 950 或钉死 immortalwrt 内核 tag。" ;;
                 esac
             fi
-            KERN_TREE=$(ls -d build_dir/linux-x86_64/linux-6.12* 2>/dev/null | head -1)
-            if [ -n "$KERN_TREE" ]; then
-                if ! patch -p1 --dry-run -d "$KERN_TREE" < "$FWX_KERN_PATCH" >/tmp/fwx950.log 2>&1; then
-                    error_exit "950 补丁无法应用到已解压内核树($KERN_TREE)，内核版本可能已更新导致上下文不符"
-                elif grep -qi "fuzz" /tmp/fwx950.log; then
-                    echo "[diy] WARN: 950 以 fuzz 方式应用，内核版本可能已更新，存在运行时风险" >&2
-                fi
-            fi
+            # before 阶段内核树尚未解压，此处不做 dry-run（假校验）；能否干净打入由 make 在
+            # kernel prepare 阶段应用 hack 补丁时 fail-fast，漏打则 kmod-fwx 因缺 nf_conn.fwx_data 编译失败
             FWX_HACK_DIR="target/linux/generic/hack-6.12"
             mkdir -p "$FWX_HACK_DIR"
             cp -f "$FWX_KERN_PATCH" "$FWX_HACK_DIR/"
@@ -210,21 +209,17 @@ themes)
 import sys, os, re, glob
 fwm_root, luci_dir = sys.argv[1], sys.argv[2]
 
-# .ut 是 ucode 模板 → 用 {{ }}；Lua <%= %> 仅遗留兼容分支。
-TITLE_UCODE = "<title>{{ striptags((boardinfo.hostname or '?') .. (node and ' - ' .. node.title or '')) }} - LuCI</title>"
-TITLE_LUA  = "<title><%= striptags((boardinfo.hostname or '?') .. (node and ' - ' .. node.title or '')) %> - LuCI</title>"
+# .ut 是 ucode 模板，标题一律 {{ }}；Lua <%= %> 会被字面输出，勿用。
+TITLE = "<title>{{ striptags((boardinfo.hostname or '?') .. (node and ' - ' .. node.title or '')) }} - LuCI</title>"
 # 隐藏 footer 但保留 DOM（整串用于重复构建去重）
 HIDE_CSS = '<style id="leenwrt-hide-footer">footer{display:none!important}</style>'
 
 def fix_header(path):
     s0 = open(path, encoding='utf-8').read()
     s = s0
-    # .ut 即 ucode，旧 Lua <%= %> 按损坏自愈重注入
-    is_ucode = path.endswith('.ut')
-    TITLE_NEW = TITLE_UCODE if is_ucode else TITLE_LUA
-    s, n = re.subn(r'<title[^>]*>.*?</title>', TITLE_NEW, s, count=1, flags=re.S)
+    s, n = re.subn(r'<title[^>]*>.*?</title>', TITLE, s, count=1, flags=re.S)
     if n and HIDE_CSS not in s:
-        s = s.replace(TITLE_NEW, TITLE_NEW + "\n    " + HIDE_CSS, 1)  # 紧跟 </title> 注入，不依赖 </head>
+        s = s.replace(TITLE, TITLE + "\n    " + HIDE_CSS, 1)  # 紧跟 </title> 注入，不依赖 </head>
     if s != s0:
         open(path, 'w', encoding='utf-8').write(s)
         print("[diy] 标题+footer隐藏已应用: " + path)
@@ -273,9 +268,8 @@ after)
       *)  FB_DIR="$PROJECT_ROOT/$FILES_DIR_NAME" ;;
     esac
     OUT="$FB_DIR/etc/uci-defaults/99-custom.sh"
-    SHADOW="$FB_DIR/etc/shadow"
     mkdir -p "$(dirname "$OUT")"
-    rm -f "$OUT" "$SHADOW"
+    rm -f "$OUT"
 
     ip_esc=$(_escape_uci "$CUSTOM_IP")
 
@@ -401,6 +395,22 @@ uci -q set dhcp.@dnsmasq[0].rebind_protection='0'
 uci set dhcp.@dnsmasq[0].sequential_ip='1'
 uci commit dhcp
 EOF
+)
+
+    # OAF 出厂配置：仅 OAF 勾选时注入；fwx 同样有 fwx.global，不能用它作门控。
+    # 三段须均由 OAF 包创建，缺一即跳过，避免 uci set 新建残缺空段。
+    OAF_FACTORY_BLK=""
+    [ "$WITH_OAF" = "1" ] && OAF_FACTORY_BLK=$(cat <<'EOT'
+# OAF 出厂配置：浅色/网关模式/启用过滤
+if uci -q get fwx.global >/dev/null 2>&1 && \
+   uci -q get fwx.network >/dev/null 2>&1 && \
+   uci -q get fwx.appfilter >/dev/null 2>&1; then
+    uci set fwx.global.theme_mode='0'
+    uci set fwx.network.work_mode='0'
+    uci set fwx.appfilter.enable='1'
+    uci commit fwx
+fi
+EOT
 )
 
     # 主路由端口：WAN 锁 eth1（本机物理前口映射为 eth1，非 eth0）；其余 eth* 桥 br-lan
@@ -608,16 +618,25 @@ chmod 755 /etc/init.d/cpufreq-perf
 chmod 755 /etc/init.d/firstboot-pkgs
 /etc/init.d/firstboot-pkgs enable
 
-# OAF 出厂配置：浅色/网关模式/启用过滤（uci-defaults 首启自清）
-if uci -q get fwx.global >/dev/null 2>&1; then
-    uci set fwx.global.theme_mode='0'
-    uci set fwx.network.work_mode='0'
-    uci set fwx.appfilter.enable='1'
-    uci commit fwx
-fi
-
-logger -t uci-defaults "配置应用完成"
+$OAF_FACTORY_BLK
 EOT
+
+    # root 密码：首启只替换 /etc/shadow 的 root 行，保留系统其余条目（勿整体覆盖）
+    if [ -n "$ROOT_PASSWORD" ]; then
+        command -v openssl >/dev/null 2>&1 || error_exit "缺失依赖: openssl (用于 root 密码哈希)"
+        # musl crypt 仅认 DES/MD5($1$)，dropbear 才支持 SHA-512；用 -1 保证 SSH 与网页登录一致
+        crypt=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -1 -stdin) || error_exit "openssl密码加密失败"
+        # printf 逐行写入，避免 heredoc 把 hash 里的 $1$ 当位置参数展开
+        {
+            printf '%s\n' "if grep -q '^root:' /etc/shadow 2>/dev/null; then"
+            printf '%s\n' "    sed -i 's|^root:[^:]*:|root:${crypt}:|' /etc/shadow"
+            printf '%s\n' "else"
+            printf '%s\n' "    echo 'root:${crypt}:0:0:99999:7:::' >> /etc/shadow"
+            printf '%s\n' "fi"
+            printf '%s\n' "chmod 600 /etc/shadow"
+        } >> "$OUT"
+    fi
+    echo 'logger -t uci-defaults "配置应用完成"' >> "$OUT"
     chmod 755 "$OUT"
     echo "[diy] 输出: $OUT"
 
@@ -635,13 +654,6 @@ EOT
         fi
     fi
 
-    if [ -n "$ROOT_PASSWORD" ]; then
-        command -v openssl >/dev/null 2>&1 || error_exit "缺失依赖: openssl (用于 root 密码哈希)"
-        # musl crypt 仅认 DES/MD5($1$)，dropbear 才支持 SHA-512；用 -1 保证 SSH 与网页登录一致
-        crypt=$(printf '%s' "$ROOT_PASSWORD" | openssl passwd -1 -stdin) || error_exit "openssl密码加密失败"
-        echo "root:$crypt:0:0:99999:7:::" > "$SHADOW"
-        chmod 600 "$SHADOW" 2>/dev/null || true
-    fi
     ;;
 *) error_exit "PHASE仅支持 before / config / themes / ruby / oaf / after" ;;
 esac
