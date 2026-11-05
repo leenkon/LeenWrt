@@ -1,18 +1,6 @@
 --- a/src/fwx_main.c
 +++ b/src/fwx_main.c
-@@ -1251,6 +1251,11 @@
- 	unsigned char *msg_buf = NULL;
- 	unsigned int consumed = 0;
- 
-+	/* Defense in depth: even with parse_flow_proto clamp, reject absurd sizes
-+	 * to prevent WARN/panic from unsigned wrap at the call site. */
-+	if (len == 0 || len > MAX_AF_SUPPORT_DATA_LEN || from > skb->len)
-+		return NULL;
-+
- 	msg_buf = kmalloc(len, GFP_KERNEL);
- 	if (!msg_buf)
- 		return NULL;
-@@ -1309,18 +1314,51 @@
+@@ -1300,18 +1300,52 @@
  		return -1;
  	}
  
@@ -20,8 +8,9 @@
 +	 * Clamp the L4 payload window to the real skb tail. The header fields used
 +	 * above (iph->tot_len / ip6h->payload_len) are sender-controlled and may
 +	 * disagree with the actual skb; derive the bound from the skb itself.
-+	 * Without this, l4_len / l4_data can point past the skb and read_skb()'s
-+	 * kmalloc(len) memcpy trips FORTIFY and panics the kernel. */
++	 * Without this, l4_data / l4_len can point past the skb and the dpi_*
++	 * scanners (which read l4_data directly, unlike read_skb, whose own
++	 * window is validated) read out of bounds and panic the kernel. */
 +	{
 +		unsigned char *tail = skb_tail_pointer(skb);
 +		int avail;
@@ -65,3 +54,4 @@
  		flow->l4_data = ipp + 8;
  		flow->dport = ntohs(udph->dest);
  		flow->sport = ntohs(udph->source);
+ 

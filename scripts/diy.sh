@@ -167,11 +167,21 @@ before)
     ;;
 
 oaf)
-    # 上游未修 DPI 越界（l4_len 负值回绕 → read_skb 收到 ≈4GB → order=20 WARN/panic）；OAF 克隆后才可调用（before 阶段源码尚不存在）
+    # 上游 read_skb 已重写自带范围校验(2026-10)，但 parse_flow_proto 仍无 skb 尾钳制——
+    # dpi_* 循环直接读 l4_data 不经 read_skb，越界读 panic 风险仍在，补丁仅剩该钳制。
+    # OAF 克隆后才可调用（before 阶段源码尚不存在）；上游追 master 浮动头，apply 失败时若
+    # 上游已自带钳制则让位，否则 fail-fast。
     echo "[diy] oaf: 应用 DPI bounds 补丁"
     OAF_DIR="$PROJECT_ROOT/openwrt/package/OpenAppFilter/oaf"
-    _apply_fwx_src_patch "OAF DPI bounds" "$PROJECT_ROOT/patches/oaf/oaf-dpi-skb-bounds.patch" "$OAF_DIR"
-    _gate_dpi_patch "OAF" "$OAF_DIR/src/fwx_main.c" "$OAF_DIR/Makefile"
+    if ! _apply_fwx_src_patch "OAF DPI bounds" "$PROJECT_ROOT/patches/oaf/oaf-dpi-skb-bounds.patch" "$OAF_DIR" 1; then
+        if grep -Eq 'skb_tail_pointer|tail - ipp|pskb_may_pull' "$OAF_DIR/src/fwx_main.c" 2>/dev/null; then
+            echo "[diy][warn] 上游 OAF fwx_main.c 已自带 skb 边界钳制，DPI 补丁跳过（上游已修复，自动让位）"
+        else
+            error_exit "OAF DPI bounds 补丁上下文不符且上游未自带钳制（详见 $PROJECT_ROOT/patches/oaf/oaf-dpi-skb-bounds.patch）；OAF 版本漂移需重新核对"
+        fi
+    else
+        _gate_dpi_patch "OAF" "$OAF_DIR/src/fwx_main.c" "$OAF_DIR/Makefile"
+    fi
     ;;
 
 ruby)

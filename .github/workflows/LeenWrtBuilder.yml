@@ -137,7 +137,8 @@ jobs:
                    feeds/packages/net/open-app-filter feeds/luci/applications/luci-app-appfilter
             timeout 180 git clone --depth 1 https://github.com/destan19/OpenAppFilter package/OpenAppFilter
             echo "[build] OAF 上游: $(git -C package/OpenAppFilter log -1 --format='%h %ad' --date=short)"
-            # DPI bounds 补丁：上游未修，l4_len 负值回绕致 read_skb 请求 ≈4GB → order=20 WARN/panic；克隆后立即打补丁+自检
+            # DPI bounds 补丁：上游 read_skb 已重写自带范围校验(2026-10)，但 parse_flow_proto 仍无
+            # skb 尾钳制（dpi_* 直接读 l4_data 不经 read_skb）；克隆后立即打补丁+自检，上游若自带钳制则自动让位
             $GITHUB_WORKSPACE/scripts/diy.sh -v $MAIN_VER -p oaf
 
             # 特征库不在构建期拉取（CI 访问 api.openappfilter.com 不稳且易 403）；
