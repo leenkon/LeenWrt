@@ -49,7 +49,8 @@ set_upstream() {
 }
 
 reconcile() {
-	/usr/sbin/dns-hijack
+	# 无 ADGH / 关劫持的构建会删掉 dns-hijack，门控避免 60s 看门狗反复报 not found
+	[ -x /usr/sbin/dns-hijack ] && /usr/sbin/dns-hijack
 	set_upstream
 }
 
@@ -74,7 +75,7 @@ reload_service() {
 
 # 停止：dns-hijack 按 ADGH 监听态保留或自清劫持；dnsmasq 上游由 set_upstream 归位
 stop_service() {
-	/usr/sbin/dns-hijack 2>/dev/null
+	[ -x /usr/sbin/dns-hijack ] && /usr/sbin/dns-hijack 2>/dev/null
 	set_upstream 2>/dev/null
 }
 
