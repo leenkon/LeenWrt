@@ -51,7 +51,7 @@ jobs:
           # 使 DPI bounds 补丁在 diy.sh before 能干净应用, 避免开启过滤触发内核 panic
           $GITHUB_WORKSPACE/scripts/sync-fwx.sh "$FWX_COMMIT"
           echo "[ci] fwx 核心已按钉点 $FWX_COMMIT 拉取(不追分支头)"
-          # 注：fwx 沿用 sync-fwx 拉取的钉点 feature.cfg；OAF 特征库走设备首启在线更新（见 OAF 段）。
+          # 注：fwx 四组件按钉点拉取，特征库不在构建期注入；OAF 特征库由设备首启在线更新（见 OAF 段）。
 
       # 注：fanchmwrt 主题由上方「同步 fwx 核心」(sync-fwx.sh) 在 fwx 开启时一并拉取；关 fwx 不需要，故不再单独拉取。
 
@@ -243,7 +243,7 @@ jobs:
           cp -f $GITHUB_WORKSPACE/apps/*.apk files/etc/firstboot-pkgs/apps/ 2>/dev/null || true
 
           # 按勾选删除不需要的静态文件（Full/Mini 一致）：未勾 ADGH/OC 则移除对应静态文件，避免固件残留死配置。
-          # dns-hijack 仅在 ADGH 启用且劫持开启时保留；脚本由 init.d 监控循环触发，未装 ADGH 时自动跳过。
+          # dns-hijack 仅在 ADGH 启用且劫持开启时保留；运行期以 adguardhome.config.dns_hijack 为唯一来源。
           if [ "$WITH_ADGH" != "true" ]; then
             rm -rf files/etc/adguardhome
             rm -f files/usr/bin/AdGuardHome files/etc/init.d/adguardhome files/etc/config/adguardhome

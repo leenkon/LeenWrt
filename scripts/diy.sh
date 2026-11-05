@@ -559,7 +559,7 @@ EOT
             cat >> "$OUT" <<EOT
 $ADGH_ENABLE_BLK
 EOT
-            # dns_hijack 写 uci；=0 时改 REJECT 强制走路由器 DNS（劫持表由 dns-balance 按监听态布/清）
+            # dns_hijack 写 uci（dns-hijack 运行期读取）；=0 时改 REJECT 强制走路由器 DNS
             cat >> "$OUT" <<EOT
 uci -q delete adguardhome.config.dns_hijack
 uci set adguardhome.config.dns_hijack='$WITH_DNS_HIJACK'

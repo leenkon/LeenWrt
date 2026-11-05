@@ -1,5 +1,5 @@
 #!/bin/sh
-# LAN :53 → :5353(ADGH)；ADGH 未就绪则清表回退 dnsmasq :53（零抖动）。
+# LAN :53 → :5353(ADGH)；关劫持或 ADGH 未就绪则清表回退 dnsmasq :53（零抖动）。
 # priority -150 早于 firewall4 dstnat(-100)；仅 br-lan 入向，避免 ADGH 自身上游 127.0.0.1:53 被重定向成环。
 # dns_hijack_bypass_ip 空=全量劫持；按地址族排除旁路；ADGH 须 bind 0.0.0.0 + :: 5353。
 if ! command -v nft >/dev/null 2>&1; then
@@ -20,8 +20,9 @@ port_listen() {
     fi
 }
 
-# ADGH 未装/未监听：清表回退 dnsmasq :53（零抖动），清签名退出
-if [ ! -x /usr/bin/AdGuardHome ] || ! port_listen; then
+# UCI 是运行期唯一开关来源（构建期删脚本只是兜底）；=0 与 ADGH 未就绪同处理，清签名退出
+if [ "$(uci -q get adguardhome.config.dns_hijack 2>/dev/null)" = "0" ] \
+   || [ ! -x /usr/bin/AdGuardHome ] || ! port_listen; then
     nft delete table $TABLE 2>/dev/null
     rm -f "$STATE" 2>/dev/null
     exit 0
